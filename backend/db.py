@@ -42,7 +42,7 @@ SCENE_FILTER_FIELDS = ["era", "scene_type", "genre", "mood"]
 
 # 列表中题材的排序：现代 -> 古代 -> 玄幻 -> 科幻/未来
 GENRE_ORDER = [
-    "现代-职场", "现代-校园", "现代-都市",
+    "现代-职场", "现代-校园", "现代-都市", "军事战争",
     "中国古代", "欧洲中世纪", "近代/民国",
     "中国玄幻", "西方玄幻",
     "科幻-星际", "科幻-赛博朋克", "末世废土",
@@ -55,6 +55,29 @@ def genre_rank(genre: str) -> int:
         return GENRE_ORDER.index(genre or "")
     except ValueError:
         return len(GENRE_ORDER)
+
+
+# 类型筛选展示顺序：人类 -> 动物 -> 非人
+TYPE_ORDER = [
+    "亚洲人", "欧洲人", "非洲人", "拉美人", "混血",
+    "动物/宠物", "动物拟人",
+    "机器人", "神话生物",
+]
+
+# 年龄段筛选展示顺序：从小到老
+AGE_ORDER = ["婴儿", "儿童", "青少年", "青年", "成年", "中年", "老年", "N/A"]
+
+# 各筛选字段的展示顺序（未列出的值排末尾）
+_FIELD_ORDER = {"type": TYPE_ORDER, "genre": GENRE_ORDER, "age": AGE_ORDER}
+
+
+def order_filter_values(field: str, values: list) -> list:
+    """把筛选选项按预定义顺序排列；无预定义顺序则按字面排序。"""
+    order = _FIELD_ORDER.get(field)
+    if not order:
+        return sorted(values)
+    rank = {v: i for i, v in enumerate(order)}
+    return sorted(values, key=lambda v: (rank.get(v, len(order)), v))
 
 
 def now() -> str:

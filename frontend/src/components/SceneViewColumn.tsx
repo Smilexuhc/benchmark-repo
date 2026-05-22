@@ -68,6 +68,7 @@ export default function SceneViewColumn({ scene, onRefresh }: Props) {
                   <>
                     <Image
                       src={imageUrl(img.filename)}
+                      loading="lazy"
                       style={{
                         width: '100%',
                         height: 96,
