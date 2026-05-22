@@ -206,6 +206,7 @@ export default function AssetCard({
                 <Image
                   key={img.id}
                   src={imageUrl(img.filename)}
+                  loading="lazy"
                   style={
                     img.filename === item.cover_filename
                       ? {

@@ -29,7 +29,7 @@ from pydantic import BaseModel
 import ai
 from db import (
     CHARACTER_FIELDS, FILTER_FIELDS, SCENE_FIELDS, SCENE_FILTER_FIELDS,
-    IMAGES_DIR, get_conn, init_db, now, genre_rank,
+    IMAGES_DIR, get_conn, init_db, now, genre_rank, order_filter_values,
 )
 
 app = FastAPI(title="角色与场景资产库")
@@ -102,10 +102,9 @@ def get_options():
     out = {}
     for field in FILTER_FIELDS:
         rows = conn.execute(
-            f"SELECT DISTINCT {field} AS v FROM characters "
-            f"WHERE {field} != '' ORDER BY v"
+            f"SELECT DISTINCT {field} AS v FROM characters WHERE {field} != ''"
         ).fetchall()
-        out[field] = [r["v"] for r in rows]
+        out[field] = order_filter_values(field, [r["v"] for r in rows])
     conn.close()
     return out
 
@@ -431,10 +430,9 @@ def get_scene_options():
     out = {}
     for field in SCENE_FILTER_FIELDS:
         rows = conn.execute(
-            f"SELECT DISTINCT {field} AS v FROM scenes "
-            f"WHERE {field} != '' ORDER BY v"
+            f"SELECT DISTINCT {field} AS v FROM scenes WHERE {field} != ''"
         ).fetchall()
-        out[field] = [r["v"] for r in rows]
+        out[field] = order_filter_values(field, [r["v"] for r in rows])
     conn.close()
     return out
 
