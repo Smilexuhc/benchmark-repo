@@ -2,11 +2,13 @@ import { useEffect, useMemo, useState } from 'react'
 import {
   App as AntApp,
   Button,
+  Cascader,
   Drawer,
   Image,
   Input,
-  InputNumber,
   Modal,
+  Popconfirm,
+  Segmented,
   Select,
   Space,
   Table,
@@ -21,6 +23,7 @@ import type {
 } from '../types'
 import { emptyVideoBenchmarkItem, FIELD_LABELS } from '../types'
 import { imageUrl, mediaAssetsApi, videoBenchmarkApi } from '../api'
+import { QUESTION_TYPE_OPTIONS, findCascaderValue } from '../data/questionTypeOptions'
 
 const { TextArea } = Input
 
@@ -29,15 +32,20 @@ interface Props {
   item: VideoBenchmarkItem | null
   onClose: () => void
   onSaved: (item: VideoBenchmarkItem) => void | Promise<void>
+  onDeleted?: (id: number) => void | Promise<void>
 }
 
+// 镜头类型和题目类型合并到 Cascader 单独渲染，不走通用 BASIC_FIELDS 流程
+// task_type 在编辑页隐藏（保留数据库字段）
 const BASIC_FIELDS: (keyof VideoBenchmarkItemInput)[] = [
-  'shot_type',
-  'task_type',
-  'question_type',
   'scene',
   'screen_size',
 ]
+
+const ENUM_OPTIONS: Partial<Record<keyof VideoBenchmarkItemInput, string[]>> = {
+  screen_size: ['16:9', '9:16', '2.39:1'],
+  scene: ['电影 / 预告片', '短剧 / 剧情片段', '动画 / 风格化内容'],
+}
 
 // 文字提示词放在素材上方，列表卡片顺序保持一致
 const TOP_LONG_FIELDS: (keyof VideoBenchmarkItemInput)[] = [
@@ -117,6 +125,7 @@ function pickInput(item: VideoBenchmarkItem): VideoBenchmarkItemInput {
     shot_type: item.shot_type,
     task_type: item.task_type,
     question_type: item.question_type,
+    manual_tag: item.manual_tag ?? '',
     scene: item.scene,
     screen_size: item.screen_size,
     character_image_asset: item.character_image_asset,
@@ -360,12 +369,13 @@ function MediaPicker({
 }
 
 export default function BenchmarkItemDrawer({
-  open, item, onClose, onSaved,
+  open, item, onClose, onSaved, onDeleted,
 }: Props) {
   const { message } = AntApp.useApp()
   const [form, setForm] = useState<VideoBenchmarkItemInput>(emptyVideoBenchmarkItem)
   const [selectedMedia, setSelectedMedia] = useState<Record<string, MediaAsset[]>>({})
   const [saving, setSaving] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
     if (!open) return
@@ -401,6 +411,21 @@ export default function BenchmarkItemDrawer({
     }
   }
 
+  const handleDelete = async () => {
+    if (!item) return
+    setDeleting(true)
+    try {
+      await videoBenchmarkApi.remove(item.id)
+      message.success('题目已删除')
+      await onDeleted?.(item.id)
+      onClose()
+    } catch (e) {
+      message.error((e as Error).message)
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   const setMediaList = (
     idKey: keyof VideoBenchmarkItemInput,
     idsKey: keyof VideoBenchmarkItemInput,
@@ -431,43 +456,60 @@ export default function BenchmarkItemDrawer({
       <div
         style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', columnGap: 16 }}
       >
-        {BASIC_FIELDS.map((key) => (
-          <Field key={key} label={FIELD_LABELS[key]}>
+        <div style={{ gridColumn: '1 / -1' }}>
+          <Field label="镜头类型 / 题目类型">
+            <Cascader
+              value={findCascaderValue(form.shot_type, form.question_type)}
+              onChange={(value) => {
+                const [l1 = '', , l3 = ''] = (value ?? []) as string[]
+                set('shot_type', l1)
+                set('question_type', l3)
+              }}
+              options={QUESTION_TYPE_OPTIONS}
+              placeholder="依次选择 镜头类型 → 能力点 → 题型"
+              showSearch={{ filter: (input, path) => path.some((o) => (o.label as string).toLowerCase().includes(input.toLowerCase())) }}
+              changeOnSelect={false}
+              expandTrigger="hover"
+              popupClassName="bench-cascader-popup"
+              allowClear
+              style={{ width: '100%' }}
+            />
+          </Field>
+        </div>
+        <div style={{ gridColumn: '1 / -1' }}>
+          <Field label={FIELD_LABELS.manual_tag}>
             <Input
-              value={form[key] as string}
-              onChange={(e) => set(key, e.target.value)}
-              placeholder={`输入${FIELD_LABELS[key]}`}
+              value={form.manual_tag}
+              onChange={(e) => set('manual_tag', e.target.value)}
+              placeholder="对该题目的人工补充描述，例如：动作断层跳变 （动作中途突然跳转，无过渡衔接，前后姿态割裂）"
               allowClear
             />
           </Field>
-        ))}
-        <Field label={FIELD_LABELS.score}>
-          <Select
-            value={form.score}
-            onChange={(value) => set('score', value)}
-            options={[
-              { value: null, label: '未评分' },
-              { value: 0, label: '0 分' },
-              { value: 1, label: '1 分' },
-              { value: 2, label: '2 分' },
-              { value: 3, label: '3 分' },
-              { value: 4, label: '4 分' },
-              { value: 5, label: '5 分' },
-            ]}
-            style={{ width: '100%' }}
-          />
-        </Field>
-        <Field label="快速输入 Score">
-          <InputNumber
-            min={0}
-            max={5}
-            precision={0}
-            value={form.score}
-            onChange={(value) => set('score', value)}
-            placeholder="0-5，留空为未评分"
-            style={{ width: '100%' }}
-          />
-        </Field>
+        </div>
+        {BASIC_FIELDS.map((key) => {
+          const enumOptions = ENUM_OPTIONS[key]
+          return (
+            <Field key={key} label={FIELD_LABELS[key]}>
+              {enumOptions ? (
+                <Select
+                  value={(form[key] as string) || undefined}
+                  onChange={(value) => set(key, (value ?? '') as VideoBenchmarkItemInput[typeof key])}
+                  options={enumOptions.map((v) => ({ value: v, label: v }))}
+                  placeholder={`选择${FIELD_LABELS[key]}`}
+                  allowClear
+                  style={{ width: '100%' }}
+                />
+              ) : (
+                <Input
+                  value={form[key] as string}
+                  onChange={(e) => set(key, e.target.value)}
+                  placeholder={`输入${FIELD_LABELS[key]}`}
+                  allowClear
+                />
+              )}
+            </Field>
+          )
+        })}
       </div>
 
       {TOP_LONG_FIELDS.map((key) => (
@@ -491,6 +533,22 @@ export default function BenchmarkItemDrawer({
         />
       ))}
 
+      <Field label={FIELD_LABELS.score}>
+        <Segmented
+          value={form.score ?? 'unscored'}
+          onChange={(value) => set('score', value === 'unscored' ? null : (value as number))}
+          options={[
+            { label: '未评分', value: 'unscored' },
+            { label: '0', value: 0 },
+            { label: '1', value: 1 },
+            { label: '2', value: 2 },
+            { label: '3', value: 3 },
+            { label: '4', value: 4 },
+            { label: '5', value: 5 },
+          ]}
+        />
+      </Field>
+
       {LONG_FIELDS.map((key) => (
         <Field key={key} label={FIELD_LABELS[key]}>
           <TextArea
@@ -501,6 +559,31 @@ export default function BenchmarkItemDrawer({
           />
         </Field>
       ))}
+
+      {item && (
+        <div
+          style={{
+            marginTop: 32,
+            paddingTop: 16,
+            borderTop: '1px dashed #e8e8e8',
+            display: 'flex',
+            justifyContent: 'flex-end',
+          }}
+        >
+          <Popconfirm
+            title="删除题目"
+            description={`确定删除题目 #${item.id}? 删除后可在数据库恢复。`}
+            okText="删除"
+            okButtonProps={{ danger: true }}
+            cancelText="取消"
+            onConfirm={handleDelete}
+          >
+            <Button danger loading={deleting}>
+              删除题目
+            </Button>
+          </Popconfirm>
+        </div>
+      )}
     </Drawer>
   )
 }

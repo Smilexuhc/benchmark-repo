@@ -147,6 +147,13 @@ export const videoBenchmarkApi = {
       `/api/video-benchmark-items/${id}`,
       { ...json(data), method: 'PUT' },
     ),
+  remove: (id: number) =>
+    req<{ ok: boolean }>(`/api/video-benchmark-items/${id}`, { method: 'DELETE' }),
+  stats: () =>
+    req<{
+      groups: { shot_type: string; question_type: string; count: number }[]
+      today_new: number
+    }>('/api/video-benchmark-items/stats'),
 }
 
 export const mediaAssetsApi = {

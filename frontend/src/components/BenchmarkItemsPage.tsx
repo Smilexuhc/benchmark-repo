@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   App as AntApp,
-  AutoComplete,
   Button,
+  Cascader,
   Empty,
   Image,
   Input,
@@ -21,20 +21,21 @@ import type {
 import { FIELD_LABELS } from '../types'
 import { imageUrl, videoBenchmarkApi } from '../api'
 import BenchmarkItemDrawer from './BenchmarkItemDrawer'
+import {
+  buildCascaderOptionsWithCounts,
+  findCascaderLabels,
+  type StatsGroup,
+} from '../data/questionTypeOptions'
+
+const SCENE_OPTIONS = ['电影 / 预告片', '短剧 / 剧情片段', '动画 / 风格化内容']
+const SCREEN_SIZE_OPTIONS = ['16:9', '9:16', '2.39:1']
 
 const DEFAULT_PAGE_SIZE = 20
 
 type FilterKey = 'shot_type' | 'task_type' | 'question_type' | 'scene' | 'screen_size'
 
-const FILTER_FIELDS: FilterKey[] = [
-  'shot_type',
-  'task_type',
-  'question_type',
-  'scene',
-  'screen_size',
-]
-
-const TAG_FIELDS: FilterKey[] = FILTER_FIELDS
+// 卡片上展示的 chip 字段：shot_type / question_type 提升到标题，scene / screen_size 留作小标签
+const TAG_FIELDS: FilterKey[] = ['scene', 'screen_size']
 
 const MODEL_NAME = 'Seedance'  // v1: 仅一个模型；未来多模型时右侧扩展为多列
 
@@ -388,10 +389,25 @@ function ItemCard({
   const [promptExpanded, setPromptExpanded] = useState(false)
   const [judgingExpanded, setJudgingExpanded] = useState(false)
 
-  const tags = TAG_FIELDS.map((field) => ({
-    field,
-    value: (item[field] as string)?.trim(),
-  })).filter((t) => !!t.value)
+  // 标题：question_type 命中树时显示带序号的 [L1 label, L2 label, L3 label]，未命中（legacy）则只显示 shot_type
+  const shotType = item.shot_type?.trim()
+  const questionType = item.question_type?.trim()
+  const cascaderLabels = shotType && questionType ? findCascaderLabels(shotType, questionType) : undefined
+  const titleParts = cascaderLabels
+    ? cascaderLabels
+    : ([shotType].filter(Boolean) as string[])
+
+  // 顺序与编辑抽屉一致：测试点人工标注 → 场景 → 屏幕尺寸
+  // 当 question_type 已经在标题里时，manual_tag 与之相同则去重；legacy 情况下不去重，让 legacy 文案落到下一行
+  const manualTagValue = item.manual_tag?.trim()
+  const tags: { field: string; value: string }[] = []
+  if (manualTagValue && (!cascaderLabels || manualTagValue !== questionType)) {
+    tags.push({ field: 'manual_tag', value: manualTagValue })
+  }
+  for (const field of TAG_FIELDS) {
+    const value = (item[field] as string)?.trim()
+    if (value) tags.push({ field: field as string, value })
+  }
 
   return (
     <div
@@ -424,9 +440,26 @@ function ItemCard({
             alignItems: 'center',
           }}
         >
-          <span style={{ fontSize: 13, color: '#9aa0a6', fontWeight: 600 }}>
-            #{item.id}
-          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: 1 }}>
+            <span style={{ fontSize: 13, color: '#9aa0a6', fontWeight: 600, flexShrink: 0 }}>
+              #{item.id}
+            </span>
+            {titleParts.length > 0 && (
+              <span
+                title={titleParts.join(' · ')}
+                style={{
+                  fontSize: 15,
+                  fontWeight: 600,
+                  color: '#1f2328',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {titleParts.join(' · ')}
+              </span>
+            )}
+          </div>
           <Button
             size="small"
             onClick={(e) => {
@@ -496,8 +529,6 @@ export default function BenchmarkItemsPage() {
   const [items, setItems] = useState<VideoBenchmarkItem[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(false)
-  const [search, setSearch] = useState('')
-  const [query, setQuery] = useState('')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE)
   const [filters, setFilters] = useState<Record<FilterKey, string | undefined>>({
@@ -507,17 +538,30 @@ export default function BenchmarkItemsPage() {
     scene: undefined,
     screen_size: undefined,
   })
+  const [cascaderPath, setCascaderPath] = useState<string[] | undefined>(undefined)
+  const [manualTag, setManualTag] = useState('')
+  const [manualTagQuery, setManualTagQuery] = useState('')
   const [score, setScore] = useState<number | null | undefined>(undefined)
+  const [statsGroups, setStatsGroups] = useState<StatsGroup[]>([])
+  const [todayNew, setTodayNew] = useState(0)
+  const cascaderOptions = useMemo(
+    () => buildCascaderOptionsWithCounts(statsGroups),
+    [statsGroups],
+  )
+  const totalCount = useMemo(
+    () => statsGroups.reduce((sum, g) => sum + g.count, 0),
+    [statsGroups],
+  )
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [editing, setEditing] = useState<VideoBenchmarkItem | null>(null)
 
   useEffect(() => {
     const timer = setTimeout(() => {
       setPage(1)
-      setQuery(search)
+      setManualTagQuery(manualTag)
     }, 300)
     return () => clearTimeout(timer)
-  }, [search])
+  }, [manualTag])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -525,8 +569,8 @@ export default function BenchmarkItemsPage() {
       const params: VideoBenchmarkListParams = {
         limit: pageSize,
         offset: (page - 1) * pageSize,
-        q: query.trim() || undefined,
         score,
+        manual_tag: manualTagQuery.trim() || undefined,
         ...filters,
       }
       const data = await videoBenchmarkApi.list(params)
@@ -537,35 +581,11 @@ export default function BenchmarkItemsPage() {
     } finally {
       setLoading(false)
     }
-  }, [filters, message, page, pageSize, query, score])
+  }, [filters, manualTagQuery, message, page, pageSize, score])
 
   useEffect(() => {
     load()
   }, [load])
-
-  // 从当前页 items 聚合 distinct 值供下拉建议
-  const filterOptions = useMemo(() => {
-    const result: Record<FilterKey, { value: string }[]> = {
-      shot_type: [],
-      task_type: [],
-      question_type: [],
-      scene: [],
-      screen_size: [],
-    }
-    FILTER_FIELDS.forEach((field) => {
-      const set = new Set<string>()
-      items.forEach((it) => {
-        const v = (it[field] as string)?.trim()
-        if (v) set.add(v)
-      })
-      const selected = filters[field]
-      if (selected) set.add(selected)
-      result[field] = Array.from(set)
-        .sort()
-        .map((value) => ({ value }))
-    })
-    return result
-  }, [items, filters])
 
   const openNew = () => {
     setEditing(null)
@@ -585,12 +605,36 @@ export default function BenchmarkItemsPage() {
       scene: undefined,
       screen_size: undefined,
     })
+    setCascaderPath(undefined)
+    setManualTag('')
+    setManualTagQuery('')
     setScore(undefined)
     setPage(1)
   }
 
+  const loadStats = useCallback(async () => {
+    try {
+      const { groups, today_new } = await videoBenchmarkApi.stats()
+      setStatsGroups(groups)
+      setTodayNew(today_new)
+    } catch (e) {
+      // 统计接口失败不阻塞主流程，Cascader 退回到 0 统计展示
+      console.warn('failed to load stats', e)
+    }
+  }, [])
+
+  useEffect(() => {
+    loadStats()
+  }, [loadStats])
+
   const onSaved = async () => {
     await load()
+    await loadStats()
+  }
+
+  const onDeleted = async () => {
+    await load()
+    await loadStats()
   }
 
   return (
@@ -609,26 +653,52 @@ export default function BenchmarkItemsPage() {
         }}
       >
         <Space size={8} wrap>
-          {FILTER_FIELDS.map((field) => (
-            <AutoComplete
-              key={field}
-              allowClear
-              placeholder={FIELD_LABELS[field]}
-              value={filters[field]}
-              options={filterOptions[field]}
-              filterOption={(input, opt) =>
-                (opt?.value as string)
-                  .toLowerCase()
-                  .includes(input.toLowerCase())
-              }
-              onChange={(value) => {
-                const v = (typeof value === 'string' ? value.trim() : '') || undefined
-                setFilters((current) => ({ ...current, [field]: v }))
-                setPage(1)
-              }}
-              style={{ width: 140 }}
-            />
-          ))}
+          <Cascader
+            allowClear
+            placeholder="镜头类型 / 题目类型"
+            value={cascaderPath}
+            options={cascaderOptions}
+            changeOnSelect
+            expandTrigger="hover"
+            popupClassName="bench-cascader-popup"
+            showSearch={{
+              filter: (input, path) =>
+                path.some((o) => (o.label as string).toLowerCase().includes(input.toLowerCase())),
+            }}
+            onChange={(value) => {
+              const arr = (value ?? []) as string[]
+              setCascaderPath(arr.length ? arr : undefined)
+              setFilters((current) => ({
+                ...current,
+                shot_type: arr[0] || undefined,
+                question_type: arr.length === 3 ? arr[2] : undefined,
+              }))
+              setPage(1)
+            }}
+            style={{ width: 260 }}
+          />
+          <Select
+            allowClear
+            placeholder={FIELD_LABELS.scene}
+            value={filters.scene}
+            options={SCENE_OPTIONS.map((v) => ({ value: v, label: v }))}
+            onChange={(value) => {
+              setFilters((current) => ({ ...current, scene: value || undefined }))
+              setPage(1)
+            }}
+            style={{ width: 180 }}
+          />
+          <Select
+            allowClear
+            placeholder={FIELD_LABELS.screen_size}
+            value={filters.screen_size}
+            options={SCREEN_SIZE_OPTIONS.map((v) => ({ value: v, label: v }))}
+            onChange={(value) => {
+              setFilters((current) => ({ ...current, screen_size: value || undefined }))
+              setPage(1)
+            }}
+            style={{ width: 140 }}
+          />
           <Select
             allowClear
             placeholder={FIELD_LABELS.score}
@@ -647,16 +717,20 @@ export default function BenchmarkItemsPage() {
             ]}
             style={{ width: 120 }}
           />
+          <Input
+            allowClear
+            placeholder="搜索测试点人工标注"
+            value={manualTag}
+            onChange={(e) => setManualTag(e.target.value)}
+            style={{ width: 200 }}
+          />
           <Button onClick={resetFilters}>重置筛选</Button>
         </Space>
         <div style={{ flex: 1, minWidth: 16 }} />
-        <Input.Search
-          allowClear
-          placeholder="搜索镜头 / 任务 / 场景 / 提示词 / 输出"
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          style={{ width: 320 }}
-        />
+        <div style={{ fontSize: 13, color: '#5a6068', whiteSpace: 'nowrap' }}>
+          共 <strong style={{ color: '#1f2328' }}>{totalCount}</strong> 题 · 今日新增{' '}
+          <strong style={{ color: todayNew > 0 ? '#16a34a' : '#1f2328' }}>{todayNew}</strong>
+        </div>
         <Button type="primary" onClick={openNew}>
           新建题目
         </Button>
@@ -718,6 +792,7 @@ export default function BenchmarkItemsPage() {
         item={editing}
         onClose={() => setDrawerOpen(false)}
         onSaved={onSaved}
+        onDeleted={onDeleted}
       />
     </div>
   )
