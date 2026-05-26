@@ -338,7 +338,7 @@ def list_media_assets(
     limit: int,
     offset: int,
 ) -> dict:
-    where = ["TRUE"]
+    where = ["a.deleted_at IS NULL"]
     params: list = []
     if media_type:
         where.append("i.media_type = %s")
@@ -414,7 +414,7 @@ def asset_to_dict(conn, row: dict, fields: list[str], view_sources: set[str] | N
 
 def get_asset(conn, kind: str, asset_id: int) -> dict | None:
     return conn.execute(
-        "SELECT * FROM assets WHERE kind = %s AND id = %s",
+        "SELECT * FROM assets WHERE kind = %s AND id = %s AND deleted_at IS NULL",
         (kind, asset_id),
     ).fetchone()
 
@@ -462,17 +462,11 @@ def update_asset(conn, kind: str, asset_id: int, fields: list[str], payload) -> 
 
 
 def delete_asset(conn, kind: str, asset_id: int) -> list[str]:
-    rows = conn.execute(
-        """
-        SELECT i.object_key
-        FROM asset_images i
-        JOIN assets a ON a.id = i.asset_id
-        WHERE a.kind = %s AND a.id = %s
-        """,
-        (kind, asset_id),
-    ).fetchall()
-    conn.execute("DELETE FROM assets WHERE kind = %s AND id = %s", (kind, asset_id))
-    return [r["object_key"] for r in rows]
+    conn.execute(
+        "UPDATE assets SET deleted_at = %s WHERE kind = %s AND id = %s AND deleted_at IS NULL",
+        (now(), kind, asset_id),
+    )
+    return []
 
 
 def attach_image(conn, asset_id: int, object_key: str, source: str) -> dict:
@@ -550,7 +544,7 @@ def replace_source_images(conn, asset_id: int, source: str) -> list[str]:
 
 
 def _filters_sql(kind: str, filters: Iterable[tuple[str, str | None]], q: str | None, q_fields: list[str]):
-    where = ["kind = %s"]
+    where = ["kind = %s", "deleted_at IS NULL"]
     params: list = [kind]
     for field, raw in filters:
         if raw:
@@ -607,7 +601,7 @@ def get_options(conn, kind: str, fields: list[str]) -> dict:
             """
             SELECT DISTINCT data->>%s AS value
             FROM assets
-            WHERE kind = %s AND COALESCE(data->>%s, '') != ''
+            WHERE kind = %s AND COALESCE(data->>%s, '') != '' AND deleted_at IS NULL
             """,
             (field, kind, field),
         ).fetchall()
@@ -616,7 +610,10 @@ def get_options(conn, kind: str, fields: list[str]) -> dict:
 
 
 def count_assets(conn, kind: str) -> int:
-    row = conn.execute("SELECT COUNT(*) AS c FROM assets WHERE kind = %s", (kind,)).fetchone()
+    row = conn.execute(
+        "SELECT COUNT(*) AS c FROM assets WHERE kind = %s AND deleted_at IS NULL",
+        (kind,),
+    ).fetchone()
     return int(row["c"])
 
 
