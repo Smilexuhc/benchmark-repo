@@ -15,8 +15,8 @@ export interface DrawerProps<T> {
 
 /** AssetLibrary 实际用到的 API 子集（不涉及输入类型） */
 interface LibraryApi<T> {
-  options: () => Promise<Options>
-  list: (filters: Filters, q: string) => Promise<T[]>
+  options: (deletedOnly?: boolean) => Promise<Options>
+  list: (filters: Filters, q: string, deletedOnly?: boolean) => Promise<T[]>
   generateImage: (id: number, prompt: string, setCover?: boolean) => Promise<CharImage>
   setCover: (id: number, imgId: number) => Promise<T>
   exportUrl: (filters: Filters, q: string) => string
@@ -54,6 +54,7 @@ export default function AssetLibrary<T extends AssetBase>({
 
   const [options, setOptions] = useState<Options>({})
   const [filters, setFilters] = useState<Filters>(emptyFilters)
+  const [deletedOnly, setDeletedOnly] = useState(false)
   const [search, setSearch] = useState('')
   const [query, setQuery] = useState('')
   const [items, setItems] = useState<T[]>([])
@@ -74,17 +75,17 @@ export default function AssetLibrary<T extends AssetBase>({
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      setItems(await api.list(filters, query))
+      setItems(await api.list(filters, query, deletedOnly))
     } catch (e) {
       message.error((e as Error).message)
     } finally {
       setLoading(false)
     }
-  }, [api, filters, query, message])
+  }, [api, filters, query, deletedOnly, message])
 
   useEffect(() => {
-    api.options().then(setOptions).catch(() => {})
-  }, [api])
+    api.options(deletedOnly).then(setOptions).catch(() => {})
+  }, [api, deletedOnly])
 
   useEffect(() => {
     load()
@@ -279,6 +280,8 @@ export default function AssetLibrary<T extends AssetBase>({
           filters={filters}
           count={items.length}
           onChange={setFilters}
+          deletedOnly={deletedOnly}
+          onDeletedOnlyChange={setDeletedOnly}
         />
         <main style={{ flex: 1, overflowY: 'auto', padding: 16 }}>
           {loading ? (

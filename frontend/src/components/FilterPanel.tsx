@@ -8,10 +8,13 @@ interface Props {
   filters: Filters
   count: number
   onChange: (f: Filters) => void
+  deletedOnly: boolean
+  onDeletedOnlyChange: (v: boolean) => void
 }
 
 export default function FilterPanel({
   fields, labels, options, filters, count, onChange,
+  deletedOnly, onDeletedOnlyChange,
 }: Props) {
   const active = fields.reduce((n, f) => n + (filters[f]?.length || 0), 0)
 
@@ -76,6 +79,15 @@ export default function FilterPanel({
           </Checkbox.Group>
         </div>
       ))}
+
+      <div style={{ marginTop: 24, paddingTop: 16, borderTop: '1px solid #f0f0f0' }}>
+        <Checkbox
+          checked={deletedOnly}
+          onChange={(e) => onDeletedOnlyChange(e.target.checked)}
+        >
+          显示已删除
+        </Checkbox>
+      </div>
     </aside>
   )
 }

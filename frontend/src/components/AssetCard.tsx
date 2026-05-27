@@ -66,17 +66,38 @@ export default function AssetCard({
     }
   }
 
+  const isDeleted = !!item.deleted_at
+
   return (
     <div
       style={{
+        position: 'relative',
         display: 'flex',
         background: '#fff',
         border: `1px solid ${selected ? '#1f6feb' : '#e8e8e8'}`,
         borderRadius: 8,
         overflow: 'hidden',
         minHeight: 220,
+        opacity: isDeleted ? 0.6 : 1,
       }}
     >
+      {isDeleted && (
+        <span
+          style={{
+            position: 'absolute',
+            top: 8,
+            right: 8,
+            background: '#ff4d4f',
+            color: '#fff',
+            fontSize: 11,
+            padding: '2px 8px',
+            borderRadius: 4,
+            zIndex: 1,
+          }}
+        >
+          已删除
+        </span>
+      )}
       {selectMode && (
         <div
           onClick={onToggleSelect}
