@@ -35,12 +35,13 @@ interface ApiConfig {
   imageDeletePath: (imgId: number) => string
 }
 
-function filterQuery(filters: Filters, q: string): string {
+function filterQuery(filters: Filters, q: string, deletedOnly = false): string {
   const params = new URLSearchParams()
   Object.keys(filters).forEach((k) => {
     if (filters[k].length) params.set(k, filters[k].join(','))
   })
   if (q.trim()) params.set('q', q.trim())
+  if (deletedOnly) params.set('deleted_only', 'true')
   const qs = params.toString()
   return qs ? `?${qs}` : ''
 }
@@ -57,12 +58,13 @@ function queryString(params: object): string {
 
 /** 角色与场景共用的资产 API（增删改查 / AI / 图片） */
 export interface AssetApi<T, I> {
-  options: () => Promise<Options>
-  list: (filters: Filters, q: string) => Promise<T[]>
+  options: (deletedOnly?: boolean) => Promise<Options>
+  list: (filters: Filters, q: string, deletedOnly?: boolean) => Promise<T[]>
   get: (id: number) => Promise<T>
   create: (data: I) => Promise<T>
   update: (id: number, data: I) => Promise<T>
   remove: (id: number) => Promise<{ ok: boolean }>
+  restore: (id: number) => Promise<T>
   generatePrompt: (data: I) => Promise<{ prompt: string }>
   extractFields: (description: string) => Promise<Partial<I>>
   generateImage: (id: number, prompt: string, setCover?: boolean) => Promise<CharImage>
@@ -74,14 +76,19 @@ export interface AssetApi<T, I> {
 
 function makeApi<T, I>(cfg: ApiConfig): AssetApi<T, I> {
   return {
-    options: () => req<Options>(cfg.optionsPath),
+    options: (deletedOnly = false) =>
+      req<Options>(
+        `${cfg.optionsPath}${deletedOnly ? '?deleted_only=true' : ''}`,
+      ),
 
-    list: (filters, q) => req<T[]>(`${cfg.base}${filterQuery(filters, q)}`),
+    list: (filters, q, deletedOnly = false) =>
+      req<T[]>(`${cfg.base}${filterQuery(filters, q, deletedOnly)}`),
 
     get: (id) => req<T>(`${cfg.base}/${id}`),
     create: (data) => req<T>(cfg.base, json(data)),
     update: (id, data) => req<T>(`${cfg.base}/${id}`, { ...json(data), method: 'PUT' }),
     remove: (id) => req<{ ok: boolean }>(`${cfg.base}/${id}`, { method: 'DELETE' }),
+    restore: (id) => req<T>(`${cfg.base}/${id}/restore`, { method: 'POST' }),
 
     generatePrompt: (data) =>
       req<{ prompt: string }>(cfg.promptPath, json(data)),

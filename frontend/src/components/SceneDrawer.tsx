@@ -87,6 +87,18 @@ export default function SceneDrawer({
     })
   }
 
+  const restore = async () => {
+    if (!cur) return
+    try {
+      const saved = await sceneApi.restore(cur.id)
+      setCur(saved)
+      onRefresh()
+      message.success('已恢复')
+    } catch (e) {
+      message.error((e as Error).message)
+    }
+  }
+
   const extractFields = async () => {
     if (!form.description.trim()) {
       message.warning('请先填写自由描述')
@@ -179,9 +191,15 @@ export default function SceneDrawer({
         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
           <span>
             {cur && (
-              <Button danger onClick={del}>
-                删除
-              </Button>
+              cur.deleted_at ? (
+                <Button type="primary" onClick={restore}>
+                  恢复
+                </Button>
+              ) : (
+                <Button danger onClick={del}>
+                  删除
+                </Button>
+              )
             )}
           </span>
           <span>

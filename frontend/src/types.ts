@@ -28,6 +28,7 @@ export interface AssetBase {
   cover_image_id: number | null
   cover_filename: string | null
   images: CharImage[]
+  deleted_at?: string | null
 }
 
 export interface Character extends AssetBase {

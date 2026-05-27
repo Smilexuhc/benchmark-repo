@@ -56,6 +56,7 @@ from db import (
     video_benchmark_stats,
     video_benchmark_today_new_count,
     replace_source_images,
+    restore_asset,
     set_cover as db_set_cover,
     update_asset,
     update_video_benchmark_item,
@@ -381,12 +382,12 @@ def delete_video_benchmark_api(item_id: int):
 
 
 @app.get("/api/options")
-def get_options():
+def get_options(deleted_only: bool = False):
     def load():
         with get_conn() as conn:
-            return db_get_options(conn, ASSET_CHARACTER, FILTER_FIELDS)
+            return db_get_options(conn, ASSET_CHARACTER, FILTER_FIELDS, deleted_only=deleted_only)
 
-    return _cached_api(("character_options",), load)
+    return _cached_api(("character_options", deleted_only), load)
 
 
 @app.get("/api/characters")
@@ -397,6 +398,7 @@ def list_characters(
     age: Optional[str] = None,
     genre: Optional[str] = None,
     q: Optional[str] = None,
+    deleted_only: bool = False,
 ):
     def load():
         with get_conn() as conn:
@@ -407,11 +409,12 @@ def list_characters(
                 [("era", era), ("type", type), ("gender", gender), ("age", age), ("genre", genre)],
                 q,
                 ["persona", "features", "prompt"],
+                deleted_only=deleted_only,
             )
         result.sort(key=lambda x: (x.get("genre") or "", x["id"]))
         return result
 
-    return _cached_api(("characters", era, type, gender, age, genre, q), load)
+    return _cached_api(("characters", era, type, gender, age, genre, q, deleted_only), load)
 
 
 @app.get("/api/characters/{cid}")
@@ -450,6 +453,17 @@ def delete_character(cid: int):
     _clear_api_cache()
     _delete_objects(keys)
     return {"ok": True}
+
+
+@app.post("/api/characters/{cid}/restore")
+def restore_character(cid: int):
+    with get_conn() as conn:
+        if not restore_asset(conn, ASSET_CHARACTER, cid):
+            raise HTTPException(404, "角色不存在或未删除")
+        conn.commit()
+        data = fetch_character(conn, cid)
+    _clear_api_cache()
+    return data
 
 
 @app.post("/api/characters/{cid}/images")
@@ -544,12 +558,12 @@ def api_generate_image(cid: int, payload: ImageGenReq):
 
 
 @app.get("/api/scenes/options")
-def get_scene_options():
+def get_scene_options(deleted_only: bool = False):
     def load():
         with get_conn() as conn:
-            return db_get_options(conn, ASSET_SCENE, SCENE_FILTER_FIELDS)
+            return db_get_options(conn, ASSET_SCENE, SCENE_FILTER_FIELDS, deleted_only=deleted_only)
 
-    return _cached_api(("scene_options",), load)
+    return _cached_api(("scene_options", deleted_only), load)
 
 
 @app.get("/api/scenes")
@@ -559,6 +573,7 @@ def list_scenes(
     genre: Optional[str] = None,
     mood: Optional[str] = None,
     q: Optional[str] = None,
+    deleted_only: bool = False,
 ):
     def load():
         with get_conn() as conn:
@@ -570,11 +585,12 @@ def list_scenes(
                 q,
                 ["name", "elements", "prompt"],
                 VIEW_SOURCES,
+                deleted_only=deleted_only,
             )
         result.sort(key=lambda x: (x.get("genre") or "", x["id"]))
         return result
 
-    return _cached_api(("scenes", era, scene_type, genre, mood, q), load)
+    return _cached_api(("scenes", era, scene_type, genre, mood, q, deleted_only), load)
 
 
 @app.get("/api/scenes/{sid}")
@@ -613,6 +629,17 @@ def delete_scene(sid: int):
     _clear_api_cache()
     _delete_objects(keys)
     return {"ok": True}
+
+
+@app.post("/api/scenes/{sid}/restore")
+def restore_scene(sid: int):
+    with get_conn() as conn:
+        if not restore_asset(conn, ASSET_SCENE, sid):
+            raise HTTPException(404, "场景不存在或未删除")
+        conn.commit()
+        data = fetch_scene(conn, sid)
+    _clear_api_cache()
+    return data
 
 
 @app.post("/api/scenes/{sid}/images")
