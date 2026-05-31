@@ -1,3 +1,4 @@
+import pLimit from 'p-limit';
 import { env } from '@benchmark-admin/shared/env';
 import {
   buildCharacterUserMessage,
@@ -21,6 +22,8 @@ import * as storage from '../storage/index.js';
 import { AiError, openai, parseJson, translateError } from './openrouter.js';
 
 export { AiError };
+
+const imageLimit = pLimit(env.AI_MAX_CONCURRENCY);
 
 // ── Text helper ───────────────────────────────────────────────────────────────
 
@@ -93,7 +96,15 @@ type ImageApiResponse = {
   }>;
 };
 
-export async function generateImage(
+export function generateImage(
+  prompt: string,
+  refImageBytes?: Buffer,
+  aspectRatio?: string,
+): Promise<{ objectKey: string }> {
+  return imageLimit(() => _generateImage(prompt, refImageBytes, aspectRatio));
+}
+
+async function _generateImage(
   prompt: string,
   refImageBytes?: Buffer,
   aspectRatio?: string,

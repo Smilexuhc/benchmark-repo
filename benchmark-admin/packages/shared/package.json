@@ -14,7 +14,8 @@
     "./lib/prompts/character": "./src/lib/prompts/character.ts",
     "./lib/prompts/scene": "./src/lib/prompts/scene.ts",
     "./lib/prompts/prop": "./src/lib/prompts/prop.ts",
-    "./lib/prompts/extract-fields": "./src/lib/prompts/extract-fields.ts"
+    "./lib/prompts/extract-fields": "./src/lib/prompts/extract-fields.ts",
+    "./lib/exports/headers": "./src/lib/exports/headers.ts"
   },
   "scripts": {
     "build": "tsc --build",
