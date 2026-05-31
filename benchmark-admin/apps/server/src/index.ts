@@ -3,7 +3,14 @@ import cookie from '@fastify/cookie';
 import cors from '@fastify/cors';
 import multipart from '@fastify/multipart';
 import rateLimit from '@fastify/rate-limit';
-import { COOKIE_NAME, requireSession, revokeToken, signToken, verifyCredentials } from '@benchmark-admin/server/auth';
+import {
+  COOKIE_NAME,
+  readSessionFromToken,
+  requireSession,
+  revokeToken,
+  signToken,
+  verifyCredentials,
+} from '@benchmark-admin/server/auth';
 import { buildExportZip } from '@benchmark-admin/server/services/exports';
 import * as storage from '@benchmark-admin/server/services/storage';
 import { env } from '@benchmark-admin/shared/env';
@@ -86,6 +93,14 @@ server.post(
     return reply.send({ ok: true });
   },
 );
+
+server.get('/api/auth/me', async (request, reply) => {
+  const cookies = (request as typeof request & { cookies?: Record<string, string | undefined> })
+    .cookies;
+  const token = cookies?.[COOKIE_NAME];
+  const session = token ? readSessionFromToken(token) : null;
+  return reply.send({ session });
+});
 
 server.post(
   '/api/auth/logout',
