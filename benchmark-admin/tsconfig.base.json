@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "Preserve",
+    "moduleResolution": "bundler",
+    "verbatimModuleSyntax": true,
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "preserveSymlinks": true,
+    "paths": {
+      "@server/*": ["./packages/server/src/*"],
+      "@shared/*": ["./packages/shared/src/*"],
+      "@env": ["./packages/shared/src/env.ts"]
+    }
+  }
+}
