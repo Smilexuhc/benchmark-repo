@@ -21,9 +21,6 @@
     "vitest": "^2.1.9"
   },
   "lint-staged": {
-    "*.{ts,tsx,js,jsx,json}": [
-      "biome format --write",
-      "biome lint"
-    ]
+    "*.{ts,tsx,js,jsx,json}": ["biome format --write", "biome lint"]
   }
 }

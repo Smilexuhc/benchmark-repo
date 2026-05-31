@@ -23,12 +23,6 @@
     }
   },
   "files": {
-    "ignore": [
-      "node_modules",
-      "dist",
-      ".next",
-      "drizzle/migrations",
-      "**/routeTree.gen.ts"
-    ]
+    "ignore": ["node_modules", "dist", ".next", "drizzle/migrations", "**/routeTree.gen.ts"]
   }
 }

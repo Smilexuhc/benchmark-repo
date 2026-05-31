@@ -17,7 +17,10 @@ export const env = createEnv({
     TOS_SECRET_ACCESS_KEY: z.string().min(1),
     // SESSION_SECRET must be >=64 hex chars (256-bit) — boot fails if missing or short
     // generate with: openssl rand -hex 32
-    SESSION_SECRET: z.string().regex(/^[0-9a-f]+$/i).min(64),
+    SESSION_SECRET: z
+      .string()
+      .regex(/^[0-9a-f]+$/i)
+      .min(64),
     ADMIN_EMAIL: z.string().email(),
     ADMIN_PASSWORD: z.string().min(1),
   },
