@@ -19,10 +19,11 @@ async function fetchAssetWithImages(id: number) {
     .from(assetImages)
     .where(eq(assetImages.assetId, id));
 
+  // Presign independently — one TOS failure degrades to an empty url, never a 500.
   const imagesWithUrls = await Promise.all(
     imageRows.map(async (img) => ({
       ...img,
-      url: await storage.getPresignedUrl(img.objectKey),
+      url: await storage.getPresignedUrl(img.objectKey).catch(() => ''),
     })),
   );
 
@@ -75,7 +76,9 @@ async function fetchPageWithCoverImage(ids: number[]) {
   }
 
   const selected = [...coverByAssetId.values()];
-  const urls = await Promise.all(selected.map((img) => storage.getPresignedUrl(img.objectKey)));
+  const urls = await Promise.all(
+    selected.map((img) => storage.getPresignedUrl(img.objectKey).catch(() => '')),
+  );
   const imageWithUrlByAssetId = new Map<number, (typeof selected)[number] & { url: string }>();
   selected.forEach((img, i) => {
     const url = urls[i];

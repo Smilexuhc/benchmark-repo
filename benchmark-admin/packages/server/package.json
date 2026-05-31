@@ -9,7 +9,8 @@
     "./auth": "./src/auth/index.ts",
     "./services/ai": "./src/services/ai/index.ts",
     "./services/exports": "./src/services/exports/index.ts",
-    "./services/storage": "./src/services/storage/index.ts"
+    "./services/storage": "./src/services/storage/index.ts",
+    "./services/upload": "./src/services/upload/index.ts"
   },
   "scripts": {
     "build": "tsc --build",

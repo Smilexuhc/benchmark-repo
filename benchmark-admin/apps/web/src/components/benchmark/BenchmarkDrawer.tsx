@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { type SubmitHandler, useForm } from 'react-hook-form';
 import { z } from 'zod';
 import {
@@ -85,6 +85,11 @@ export function BenchmarkDrawer({ id, onClose, onSaved }: BenchmarkDrawerProps) 
     defaultValues: EMPTY,
   });
   const [media, setMedia] = useState<Media>(EMPTY_MEDIA);
+  // `media` is React state outside react-hook-form, so it has no keepDirtyValues
+  // protection. Seed it from the server exactly ONCE per opened item id; a later
+  // background refetch (post-save / post-AI) must not clobber in-progress media
+  // edits. Switching to a different item id re-seeds correctly.
+  const seededMediaForId = useRef<number | null>(null);
 
   useEffect(() => {
     if (!isNew && get.data) {
@@ -105,18 +110,38 @@ export function BenchmarkDrawer({ id, onClose, onSaved }: BenchmarkDrawerProps) 
         },
         { keepDirtyValues: true },
       );
-      setMedia({
-        characterImageIds: get.data.media.character_image.map((l: MediaLink) => l.mediaId),
-        sceneImageIds: get.data.media.scene_image.map((l: MediaLink) => l.mediaId),
-        propImageIds: get.data.media.prop_image.map((l: MediaLink) => l.mediaId),
-        audioInputId: get.data.media.audio_input?.mediaId ?? null,
-        videoInputId: get.data.media.video_input?.mediaId ?? null,
-        videoOutputId: get.data.media.video_output?.mediaId ?? null,
-      });
+      if (seededMediaForId.current !== id) {
+        seededMediaForId.current = id;
+        setMedia({
+          characterImageIds: get.data.media.character_image.map((l: MediaLink) => l.mediaId),
+          sceneImageIds: get.data.media.scene_image.map((l: MediaLink) => l.mediaId),
+          propImageIds: get.data.media.prop_image.map((l: MediaLink) => l.mediaId),
+          audioInputId: get.data.media.audio_input?.mediaId ?? null,
+          videoInputId: get.data.media.video_input?.mediaId ?? null,
+          videoOutputId: get.data.media.video_output?.mediaId ?? null,
+        });
+      }
     }
-  }, [isNew, get.data, form]);
+  }, [isNew, id, get.data, form]);
 
   const shotType = form.watch('shotType');
+
+  // Non-blocking completeness feedback: the product wants curated items, but an
+  // unscored / incomplete item is a valid in-progress state, so we surface an
+  // advisory notice instead of hard zod `.min(1)` errors that would block save.
+  const textPrompt = form.watch('textPrompt');
+  const judgingCriteria = form.watch('judgingCriteria');
+  const hasAnyMedia =
+    media.characterImageIds.length > 0 ||
+    media.sceneImageIds.length > 0 ||
+    media.propImageIds.length > 0 ||
+    media.audioInputId !== null ||
+    media.videoInputId !== null ||
+    media.videoOutputId !== null;
+  const missing: string[] = [];
+  if (!textPrompt.trim()) missing.push('文本提示词');
+  if (!judgingCriteria.trim()) missing.push('评判标准');
+  if (!hasAnyMedia) missing.push('媒体');
 
   const onSubmit: SubmitHandler<FormValues> = async (values) => {
     if (isNew) {
@@ -135,6 +160,14 @@ export function BenchmarkDrawer({ id, onClose, onSaved }: BenchmarkDrawerProps) 
   return (
     <Drawer open onClose={onClose} title={isNew ? '新建评测' : '编辑评测'} widthClassName="w-[720px] max-w-full">
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4" noValidate>
+        {missing.length > 0 ? (
+          <div
+            role="status"
+            className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800"
+          >
+            缺少: {missing.join(' / ')}（可继续保存为草稿）
+          </div>
+        ) : null}
         <div className="grid grid-cols-3 gap-3">
           <Field label="镜头类型">
             <Select {...form.register('shotType')}>

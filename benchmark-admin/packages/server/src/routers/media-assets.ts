@@ -17,10 +17,12 @@ type MediaRow = {
 };
 
 async function addUrls(rows: MediaRow[]) {
+  // Presign independently — one TOS failure must not reject the whole page.
+  // A failed presign degrades to an empty url rather than a 500.
   return Promise.all(
     rows.map(async (row) => ({
       ...row,
-      url: await storage.getPresignedUrl(row.objectKey),
+      url: await storage.getPresignedUrl(row.objectKey).catch(() => ''),
     })),
   );
 }
@@ -47,23 +49,32 @@ export const mediaAssetsRouter = t.router({
         // DISTINCT ON (object_key) collapses duplicate object keys — one row per unique file.
         // Drizzle doesn't expose DISTINCT ON, so we use a raw query with sql`` template
         // for safe parameterization.
+        //
+        // The dedup runs in an inner subquery (DISTINCT ON requires ORDER BY to lead
+        // with object_key); the OUTER query then paginates by id so the cursor
+        // (id < cursor, ORDER BY id DESC) is consistent with what we advance on —
+        // otherwise pages keyed on id but ordered by object_key skip/duplicate rows.
         const kindClause = input.kind ? sql` AND a.kind = ${input.kind}` : sql``;
         const mtClause = input.mediaType ? sql` AND ai.media_type = ${input.mediaType}` : sql``;
-        const cursorClause = input.cursor ? sql` AND ai.id < ${input.cursor}` : sql``;
+        const cursorClause = input.cursor ? sql` WHERE dedup.id < ${input.cursor}` : sql``;
 
         const query = sql`
-          SELECT DISTINCT ON (ai.object_key)
-            ai.id,
-            ai.asset_id    AS "assetId",
-            ai.object_key  AS "objectKey",
-            ai.source,
-            ai.media_type  AS "mediaType",
-            ai.created_at  AS "createdAt",
-            a.kind         AS "assetKind"
-          FROM asset_images ai
-          JOIN assets a ON a.id = ai.asset_id
-          WHERE true${kindClause}${mtClause}${cursorClause}
-          ORDER BY ai.object_key, ai.id
+          SELECT * FROM (
+            SELECT DISTINCT ON (ai.object_key)
+              ai.id,
+              ai.asset_id    AS "assetId",
+              ai.object_key  AS "objectKey",
+              ai.source,
+              ai.media_type  AS "mediaType",
+              ai.created_at  AS "createdAt",
+              a.kind         AS "assetKind"
+            FROM asset_images ai
+            JOIN assets a ON a.id = ai.asset_id
+            WHERE true${kindClause}${mtClause}
+            ORDER BY ai.object_key, ai.id
+          ) dedup
+          ${cursorClause}
+          ORDER BY dedup.id DESC
           LIMIT ${LIMIT + 1}
         `;
 

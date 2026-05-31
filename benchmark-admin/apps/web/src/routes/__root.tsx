@@ -16,10 +16,14 @@ function RootLayout() {
 
   useEffect(() => {
     if (!authReady) return;
+    // On a non-401 fetch error we show an explicit auth-error state with a
+    // retry / 重新登录 affordance rather than silently redirecting, so don't
+    // auto-navigate here.
+    if (session.isError) return;
     if (!isAuthed && !isLoginRoute) {
       navigate({ to: '/login', search: { redirect: pathname }, replace: true });
     }
-  }, [authReady, isAuthed, isLoginRoute, navigate, pathname]);
+  }, [authReady, isAuthed, isLoginRoute, navigate, pathname, session.isError]);
 
   if (isLoginRoute) {
     return (
@@ -29,10 +33,26 @@ function RootLayout() {
     );
   }
 
+  if (session.isError) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 text-sm text-[hsl(var(--muted-foreground))]">
+        <p>加载会话失败。</p>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => session.refetch()}>
+            重试
+          </Button>
+          <Button size="sm" onClick={() => navigate({ to: '/login', replace: true })}>
+            重新登录
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   if (!authReady || !isAuthed) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-[hsl(var(--muted-foreground))]">
-        {session.isError ? '加载会话失败，正在重试…' : '加载中…'}
+        加载中…
       </div>
     );
   }

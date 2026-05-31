@@ -1,13 +1,17 @@
-import { TRPCError } from '@trpc/server';
-import { type SQL, and, desc, eq, gte, inArray, isNotNull, isNull, lt, sql } from 'drizzle-orm';
-import { z } from 'zod';
 import {
   assetImages,
   benchmarkItemComments,
   videoBenchmarkItems,
   videoBenchmarkMediaLinks,
 } from '@benchmark-admin/shared/db/schema';
-import { MediaBundleInput } from '@benchmark-admin/shared/schemas/benchmark';
+import {
+  MediaBundleInput,
+  type MediaByRoleType,
+  type MediaLinkOutType,
+} from '@benchmark-admin/shared/schemas/benchmark';
+import { TRPCError } from '@trpc/server';
+import { type SQL, and, desc, eq, gte, inArray, isNotNull, isNull, lt, sql } from 'drizzle-orm';
+import { z } from 'zod';
 import { db } from '../db/index.js';
 import * as storage from '../services/storage/index.js';
 import { t } from '../trpc/init.js';
@@ -22,18 +26,17 @@ type LinkRow = {
   sortOrder: number;
 };
 
-type MediaLinkOut = typeof videoBenchmarkMediaLinks.$inferSelect & { url: string };
-
-type MediaByRole = {
-  character_image: MediaLinkOut[];
-  scene_image: MediaLinkOut[];
-  prop_image: MediaLinkOut[];
-  audio_input: MediaLinkOut | null;
-  video_input: MediaLinkOut | null;
-  video_output: MediaLinkOut | null;
-};
+// Output shapes are single-sourced from the shared zod schema so the server
+// payload and the client-facing contract cannot drift.
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+// RF-2: the media-links table enforces single-cardinality roles via a partial
+// unique index. A constraint violation (PG 23505) is a client conflict — map it
+// to 409 CONFLICT rather than letting it surface as an opaque 500.
+function isUniqueViolation(err: unknown): boolean {
+  return typeof err === 'object' && err !== null && (err as { code?: string }).code === '23505';
+}
 
 function buildLinkRows(
   itemId: number,
@@ -90,7 +93,7 @@ async function fetchItemWithMedia(id: number) {
     .where(eq(benchmarkItemComments.itemId, id))
     .orderBy(benchmarkItemComments.createdAt);
 
-  const media: MediaByRole = {
+  const media: MediaByRoleType = {
     character_image: [],
     scene_image: [],
     prop_image: [],
@@ -106,10 +109,8 @@ async function fetchItemWithMedia(id: number) {
         .from(assetImages)
         .where(eq(assetImages.id, link.mediaId))
         .limit(1);
-      const url = imgRow
-        ? await storage.getPresignedUrl(imgRow.objectKey).catch(() => '')
-        : '';
-      const linkOut: MediaLinkOut = { ...link, url };
+      const url = imgRow ? await storage.getPresignedUrl(imgRow.objectKey).catch(() => '') : '';
+      const linkOut: MediaLinkOutType = { ...link, url };
 
       switch (link.role) {
         case 'character_image':
@@ -235,7 +236,8 @@ export const benchmarkRouter = t.router({
 
       const hasMore = rows.length > LIMIT;
       const pageIds = rows.slice(0, LIMIT).map((r) => r.id);
-      const nextCursor = hasMore && pageIds.length > 0 ? (pageIds[pageIds.length - 1] ?? null) : null;
+      const nextCursor =
+        hasMore && pageIds.length > 0 ? (pageIds[pageIds.length - 1] ?? null) : null;
 
       const items = await fetchPageItemsBare(pageIds);
 
@@ -259,23 +261,31 @@ export const benchmarkRouter = t.router({
     .mutation(async ({ input }) => {
       const { media, ...scalars } = input;
 
-      const item = await db.transaction(async (tx) => {
-        const [created] = await tx
-          .insert(videoBenchmarkItems)
-          .values({
-            ...scalars,
-            score: scalars.score,
-          })
-          .returning();
-        if (!created) throw new Error('Failed to create item');
+      let item: typeof videoBenchmarkItems.$inferSelect;
+      try {
+        item = await db.transaction(async (tx) => {
+          const [created] = await tx
+            .insert(videoBenchmarkItems)
+            .values({
+              ...scalars,
+              score: scalars.score,
+            })
+            .returning();
+          if (!created) throw new Error('Failed to create item');
 
-        const linkRows = buildLinkRows(created.id, media);
-        if (linkRows.length > 0) {
-          await tx.insert(videoBenchmarkMediaLinks).values(linkRows);
+          const linkRows = buildLinkRows(created.id, media);
+          if (linkRows.length > 0) {
+            await tx.insert(videoBenchmarkMediaLinks).values(linkRows);
+          }
+
+          return created;
+        });
+      } catch (err) {
+        if (isUniqueViolation(err)) {
+          throw new TRPCError({ code: 'CONFLICT', message: '同一角色的媒体已存在' });
         }
-
-        return created;
-      });
+        throw err;
+      }
 
       const result = await fetchItemWithMedia(item.id);
       if (!result) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
@@ -283,35 +293,46 @@ export const benchmarkRouter = t.router({
     }),
 
   update: protectedProcedure
-    .input(z.object({ id: z.number().int().positive() }).merge(ItemScalars.partial()).extend({ media: MediaBundleInput }))
+    .input(
+      z
+        .object({ id: z.number().int().positive() })
+        .merge(ItemScalars.partial())
+        .extend({ media: MediaBundleInput }),
+    )
     .mutation(async ({ input }) => {
       const { id, media, ...scalars } = input;
 
-      const item = await db.transaction(async (tx) => {
-        const updateSet: Record<string, unknown> = { updatedAt: new Date() };
-        for (const [key, value] of Object.entries(scalars)) {
-          if (value !== undefined) updateSet[key] = value;
+      let item: typeof videoBenchmarkItems.$inferSelect;
+      try {
+        item = await db.transaction(async (tx) => {
+          const updateSet: Record<string, unknown> = { updatedAt: new Date() };
+          for (const [key, value] of Object.entries(scalars)) {
+            if (value !== undefined) updateSet[key] = value;
+          }
+
+          const [updated] = await tx
+            .update(videoBenchmarkItems)
+            .set(updateSet)
+            .where(eq(videoBenchmarkItems.id, id))
+            .returning();
+          if (!updated) throw new TRPCError({ code: 'NOT_FOUND' });
+
+          // Replace all media links
+          await tx.delete(videoBenchmarkMediaLinks).where(eq(videoBenchmarkMediaLinks.itemId, id));
+
+          const linkRows = buildLinkRows(id, media);
+          if (linkRows.length > 0) {
+            await tx.insert(videoBenchmarkMediaLinks).values(linkRows);
+          }
+
+          return updated;
+        });
+      } catch (err) {
+        if (isUniqueViolation(err)) {
+          throw new TRPCError({ code: 'CONFLICT', message: '同一角色的媒体已存在' });
         }
-
-        const [updated] = await tx
-          .update(videoBenchmarkItems)
-          .set(updateSet)
-          .where(eq(videoBenchmarkItems.id, id))
-          .returning();
-        if (!updated) throw new TRPCError({ code: 'NOT_FOUND' });
-
-        // Replace all media links
-        await tx
-          .delete(videoBenchmarkMediaLinks)
-          .where(eq(videoBenchmarkMediaLinks.itemId, id));
-
-        const linkRows = buildLinkRows(id, media);
-        if (linkRows.length > 0) {
-          await tx.insert(videoBenchmarkMediaLinks).values(linkRows);
-        }
-
-        return updated;
-      });
+        throw err;
+      }
 
       const result = await fetchItemWithMedia(item.id);
       if (!result) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
@@ -377,9 +398,7 @@ export const benchmarkRouter = t.router({
     const [todayRow] = await db
       .select({ count: sql<number>`count(*)::int` })
       .from(videoBenchmarkItems)
-      .where(
-        and(isNull(videoBenchmarkItems.deletedAt), gte(videoBenchmarkItems.createdAt, today)),
-      );
+      .where(and(isNull(videoBenchmarkItems.deletedAt), gte(videoBenchmarkItems.createdAt, today)));
 
     return {
       groups: groups.map((g) => ({
@@ -429,6 +448,3 @@ export const benchmarkRouter = t.router({
       }),
   }),
 });
-
-// Re-export for type inference by consumers
-export type { MediaByRole };

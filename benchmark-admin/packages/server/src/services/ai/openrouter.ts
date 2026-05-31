@@ -1,5 +1,5 @@
-import OpenAI from 'openai';
 import { env } from '@benchmark-admin/shared/env';
+import OpenAI from 'openai';
 
 export class AiError extends Error {
   constructor(
@@ -24,11 +24,7 @@ export function translateError(e: unknown): Error {
   ) {
     return new AiError('AI_RATE_LIMITED', '接口额度不足：请检查 OpenRouter 账户余额 / 额度');
   }
-  if (
-    msg.includes('401') ||
-    low.includes('unauthorized') ||
-    low.includes('api key')
-  ) {
+  if (msg.includes('401') || low.includes('unauthorized') || low.includes('api key')) {
     return new AiError('AI_AUTH_FAILED', '接口鉴权失败：请检查 OPENROUTER_API_KEY');
   }
   return e instanceof Error ? e : new Error(msg);
@@ -46,7 +42,12 @@ export function parseJson(text: string): Record<string, unknown> {
   const s = t.indexOf('{');
   const e = t.lastIndexOf('}');
   if (s === -1 || e === -1) throw new AiError('AI_PARSE_ERROR', '模型未返回有效 JSON');
-  return JSON.parse(t.slice(s, e + 1)) as Record<string, unknown>;
+  try {
+    return JSON.parse(t.slice(s, e + 1)) as Record<string, unknown>;
+  } catch {
+    // Malformed JSON between the braces — surface a typed AiError instead of a raw SyntaxError.
+    throw new AiError('AI_PARSE_ERROR', '模型未返回有效 JSON');
+  }
 }
 
 // Single shared OpenAI client for all OpenRouter calls

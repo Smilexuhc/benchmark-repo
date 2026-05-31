@@ -116,15 +116,26 @@ export const useBatchRegenerateStore = create(
   ),
 );
 
+// Bound how many times we re-subscribe for the same still-pending ids. A
+// stream that only ever emits `pending` (never transitions an id to done/failed)
+// would otherwise keep `observedAny=true` and re-subscribe forever. We stop once
+// a full round makes no forward progress, capped by MAX_RESUBSCRIBE_ROUNDS as a
+// hard backstop, and mark the stuck ids failed so the UI doesn't hang.
+const MAX_RESUBSCRIBE_ROUNDS = 5;
+
 async function runSubscription(
   ids: number[],
   batchKey: string,
   controller: AbortController,
 ): Promise<void> {
   let remaining = [...ids];
+  let rounds = 0;
   while (remaining.length > 0) {
     if (controller.signal.aborted) return;
+    if (rounds >= MAX_RESUBSCRIBE_ROUNDS) break;
+    rounds += 1;
     const round = remaining;
+    const roundPendingBefore = round.length;
     let observedAny = false;
     try {
       const iter = (await trpcClient.ai.batchRegenerate.subscribe(
@@ -163,7 +174,12 @@ async function runSubscription(
     }
 
     const stillPending = useBatchRegenerateStore.getState().pending;
-    if (!observedAny || stillPending.length === 0) {
+    // Stop if the stream produced nothing, everything finished, OR this round
+    // made no forward progress (an id stuck emitting only `pending`). Otherwise
+    // a pending-only stream would re-subscribe indefinitely.
+    const roundPending = stillPending.filter((id) => round.includes(id));
+    const madeProgress = roundPending.length < roundPendingBefore;
+    if (!observedAny || stillPending.length === 0 || !madeProgress) {
       remaining = [];
       break;
     }
@@ -172,11 +188,24 @@ async function runSubscription(
 
   if (controller.signal.aborted) return;
 
+  // Any ids still pending after we stop re-subscribing are stuck (the stream
+  // never transitioned them out of `pending`). Fail them so the UI resolves
+  // instead of hanging on a permanent "进行中" state.
+  const stuck = useBatchRegenerateStore.getState().pending;
+  if (stuck.length > 0) {
+    for (const id of stuck) {
+      useBatchRegenerateStore.getState().recordResult(id, {
+        status: 'failed',
+        error: '重生成超时（未在限定重试次数内完成）',
+      });
+    }
+  }
+
   // Mark complete/error from a single status derivation. The run is complete
   // when nothing is still pending; otherwise we hit a transport error.
   useBatchRegenerateStore.setState((s) => {
     if (s.pending.length === 0) {
-      s.status = 'complete';
+      s.status = s.errorMessage ? 'error' : 'complete';
     } else if (s.errorMessage) {
       s.status = 'error';
     }

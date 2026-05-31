@@ -1,7 +1,7 @@
+import { assetImages, assets } from '@benchmark-admin/shared/db/schema';
 import { TRPCError } from '@trpc/server';
 import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
-import { assetImages, assets } from '@benchmark-admin/shared/db/schema';
 import { db } from '../db/index.js';
 import * as ai from '../services/ai/index.js';
 import * as storage from '../services/storage/index.js';
@@ -51,19 +51,30 @@ export const scenesRouter = t.router({
 
       const { objectKey } = await ai.generateImage(prompt, coverBytes);
 
-      const [img] = await db
-        .insert(assetImages)
-        .values({
-          assetId: input.id,
-          objectKey,
-          source: input.mode,
-          mediaType: 'image',
-        })
-        .returning();
+      // The image is already in TOS; if the link insert fails, clean up the
+      // orphaned object rather than leaving it stranded in the bucket.
+      let img: typeof assetImages.$inferSelect | undefined;
+      try {
+        [img] = await db
+          .insert(assetImages)
+          .values({
+            assetId: input.id,
+            objectKey,
+            source: input.mode,
+            mediaType: 'image',
+          })
+          .returning();
+      } catch (err) {
+        storage.deleteObject(objectKey).catch(() => {});
+        throw err;
+      }
 
-      if (!img) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      if (!img) {
+        storage.deleteObject(objectKey).catch(() => {});
+        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      }
 
-      const url = await storage.getPresignedUrl(img.objectKey);
+      const url = await storage.getPresignedUrl(img.objectKey).catch(() => '');
       return { ...img, url };
     }),
 });

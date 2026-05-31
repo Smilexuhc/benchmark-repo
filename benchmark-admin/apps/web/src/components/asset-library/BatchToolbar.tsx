@@ -2,13 +2,17 @@ import { useEffect, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Drawer } from '@/components/ui/drawer';
-import { Input } from '@/components/ui/input';
 import { trpc } from '@/lib/trpc';
 import { useBatchRegenerateStore } from '@/stores/batch-regenerate';
 
-export function BatchToolbar() {
+export type BatchToolbarProps = {
+  // Ids selected in the AssetLibrary multi-select. The batch run consumes these
+  // directly instead of a hand-typed comma-separated list.
+  selectedIds: number[];
+};
+
+export function BatchToolbar({ selectedIds }: BatchToolbarProps) {
   const [open, setOpen] = useState(false);
-  const [idsInput, setIdsInput] = useState('');
   const status = useBatchRegenerateStore((s) => s.status);
   const results = useBatchRegenerateStore((s) => s.results);
   const pending = useBatchRegenerateStore((s) => s.pending);
@@ -29,13 +33,6 @@ export function BatchToolbar() {
 
   const exportUrl = trpc.exports.getDownloadUrl.useQuery({ kind: 'benchmark' });
 
-  function parseIds(): number[] {
-    return idsInput
-      .split(/[,\s]+/)
-      .map((s) => Number.parseInt(s, 10))
-      .filter((n) => Number.isFinite(n) && n > 0);
-  }
-
   return (
     <>
       <div className="flex items-center gap-2">
@@ -52,25 +49,17 @@ export function BatchToolbar() {
           widthClassName="w-[480px] max-w-full"
         >
           <div className="space-y-4">
-            <div className="space-y-1.5 text-sm">
-              <label htmlFor="batch-ids-input" className="block font-medium">
-                资源 ID（逗号或空格分隔）
-              </label>
-              <Input
-                id="batch-ids-input"
-                value={idsInput}
-                onChange={(e) => setIdsInput(e.target.value)}
-                placeholder="例如：1, 2, 3"
-                disabled={status === 'running'}
-              />
-            </div>
+            <p className="text-sm text-[hsl(var(--muted-foreground))]">
+              已选中 <span className="font-medium text-[hsl(var(--foreground))]">{selectedIds.length}</span> 个资源
+              {selectedIds.length === 0 ? '（在列表中点选资源后再开始）' : ''}
+            </p>
             <div className="flex gap-2">
               <Button
                 size="sm"
-                disabled={status === 'running' || parseIds().length === 0}
+                disabled={status === 'running' || selectedIds.length === 0}
                 onClick={() => {
                   reset();
-                  void start(parseIds());
+                  void start(selectedIds);
                 }}
               >
                 开始

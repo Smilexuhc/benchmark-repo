@@ -1,16 +1,13 @@
-import { useVirtualizer } from '@tanstack/react-virtual';
-import { parseAsString, useQueryStates } from 'nuqs';
-import { useEffect, useRef, useState } from 'react';
-import { useDebounce } from 'use-debounce';
-import {
-  QUESTION_TYPES,
-  SHOT_TYPES,
-} from '@benchmark-admin/shared/constants/question-types';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { type RouterOutputs, trpc } from '@/lib/trpc';
+import { QUESTION_TYPES, SHOT_TYPES } from '@benchmark-admin/shared/constants/question-types';
+import { useVirtualizer } from '@tanstack/react-virtual';
+import { parseAsString, useQueryStates } from 'nuqs';
+import { useEffect, useRef, useState } from 'react';
+import { useDebounce } from 'use-debounce';
 
 type BenchmarkItem = RouterOutputs['benchmark']['list']['items'][number];
 import { BenchmarkDrawer } from './BenchmarkDrawer';
@@ -53,6 +50,15 @@ export function BenchmarkList() {
   const items: BenchmarkItem[] =
     list.data?.pages.flatMap((p: { items: BenchmarkItem[] }) => p.items) ?? [];
   const total: number = list.data?.pages[0]?.total ?? items.length;
+
+  // Export reflects the slice the reviewer is viewing — same filters as the list,
+  // so the ZIP matches what's on screen rather than always the full bank.
+  const exportUrl = trpc.exports.getDownloadUrl.useQuery({
+    kind: 'benchmark',
+    search: debouncedSearch || undefined,
+    shotType: state.shotType || undefined,
+    questionType: state.questionType || undefined,
+  });
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const rowVirtualizer = useVirtualizer<HTMLDivElement, HTMLDivElement>({
@@ -116,6 +122,16 @@ export function BenchmarkList() {
         </Select>
         <div className="ml-auto flex items-center gap-2 text-sm text-[hsl(var(--muted-foreground))]">
           共 {total} 条
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={!exportUrl.data}
+            onClick={() => {
+              if (exportUrl.data) window.location.href = exportUrl.data.url;
+            }}
+          >
+            导出 ZIP
+          </Button>
           <Button size="sm" onClick={() => setDrawerId('new')}>
             新建
           </Button>
@@ -143,10 +159,7 @@ export function BenchmarkList() {
         <div className="py-8 text-center text-sm text-[hsl(var(--muted-foreground))]">暂无结果</div>
       ) : (
         <div ref={scrollRef} className="overflow-auto" style={{ height: SCROLL_AREA_HEIGHT }}>
-          <div
-            className="relative w-full"
-            style={{ height: `${rowVirtualizer.getTotalSize()}px` }}
-          >
+          <div className="relative w-full" style={{ height: `${rowVirtualizer.getTotalSize()}px` }}>
             {rowVirtualizer.getVirtualItems().map((virtualRow: VRow) => {
               const item = items[virtualRow.index];
               if (!item) return null;
@@ -169,9 +182,7 @@ export function BenchmarkList() {
                     ) : (
                       <Badge>{item.score}</Badge>
                     )}
-                    {item.needsRevision ? (
-                      <Badge variant="destructive">需返工</Badge>
-                    ) : null}
+                    {item.needsRevision ? <Badge variant="destructive">需返工</Badge> : null}
                   </div>
                   <div className="text-right">
                     <Button size="sm" variant="outline" onClick={() => setDrawerId(item.id)}>

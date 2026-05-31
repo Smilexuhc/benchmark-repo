@@ -1,4 +1,4 @@
-import { PassThrough } from 'node:stream';
+import { PassThrough, Readable } from 'node:stream';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 
 vi.hoisted(() => {
@@ -20,6 +20,7 @@ vi.hoisted(() => {
 vi.mock('../../services/storage/index.js', () => ({
   getPresignedUrl: vi.fn(async (key: string) => `https://cdn.example.com/${key}`),
   getBytes: vi.fn(async () => Buffer.from('PNG\x89fake-image-data')),
+  getStream: vi.fn(async () => Readable.from(Buffer.from('PNG\x89fake-image-data'))),
   putObject: vi.fn(async () => undefined),
   newObjectKey: vi.fn(() => 'images/test.png'),
   deleteObject: vi.fn(async () => undefined),
@@ -34,9 +35,13 @@ describe('buildExportZip', () => {
       { id: 1, shotType: 'close', taskType: 'A', questionType: 'Q1', manualTag: '', scene: '古城', screenSize: '16:9', textPrompt: 'a prompt', judgingCriteria: 'good', score: 4, needsRevision: false, createdAt: new Date() },
       { id: 2, shotType: 'wide', taskType: 'B', questionType: 'Q2', manualTag: '', scene: '森林', screenSize: '4:3', textPrompt: 'another prompt', judgingCriteria: 'great', score: 5, needsRevision: false, createdAt: new Date() },
     ];
-    const imageLinks = [
-      { objectKey: 'images/img1.png', role: 'character_image', itemId: 1 },
-      { objectKey: 'images/img2.png', role: 'character_image', itemId: 2 },
+    // Exercise multi-image (two char images on item 1), audio, and video roles
+    const mediaLinks = [
+      { objectKey: 'images/img1a.png', role: 'character_image', itemId: 1, mediaType: 'image' as const },
+      { objectKey: 'images/img1b.png', role: 'scene_image', itemId: 1, mediaType: 'image' as const },
+      { objectKey: 'audios/a1.mp3', role: 'audio_input', itemId: 1, mediaType: 'audio' as const },
+      { objectKey: 'videos/v1.mp4', role: 'video_output', itemId: 1, mediaType: 'video' as const },
+      { objectKey: 'images/img2.png', role: 'character_image', itemId: 2, mediaType: 'image' as const },
     ];
 
     // Use a PassThrough to capture zip bytes (simulates Fastify reply.raw)
@@ -48,7 +53,7 @@ describe('buildExportZip', () => {
       raw: sink,
     };
 
-    await buildExportZip('benchmark', items, imageLinks, fakeReply as never);
+    await buildExportZip('benchmark', items, mediaLinks, fakeReply as never);
 
     const zipBuffer = Buffer.concat(chunks);
 
@@ -58,21 +63,23 @@ describe('buildExportZip', () => {
     expect(zipBuffer.length).toBeGreaterThan(100);
   });
 
-  it('skips unavailable images without throwing', async () => {
-    const { getBytes } = await import('../../services/storage/index.js');
-    (getBytes as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('Not found'));
+  it('skips unavailable media without throwing', async () => {
+    const { getStream } = await import('../../services/storage/index.js');
+    (getStream as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('Not found'));
 
     const { buildExportZip } = await import('../../services/exports/index.js');
 
     const items = [{ id: 3, shotType: '', taskType: '', questionType: '', manualTag: '', scene: '', screenSize: '', textPrompt: '', judgingCriteria: '', score: null, needsRevision: false, createdAt: new Date() }];
-    const imageLinks = [{ objectKey: 'images/missing.png', role: 'character_image', itemId: 3 }];
+    const mediaLinks = [
+      { objectKey: 'images/missing.png', role: 'character_image', itemId: 3, mediaType: 'image' as const },
+    ];
 
     const sink = new PassThrough();
     const fakeReply = { raw: sink };
     sink.resume(); // drain
 
     await expect(
-      buildExportZip('benchmark', items, imageLinks, fakeReply as never),
+      buildExportZip('benchmark', items, mediaLinks, fakeReply as never),
     ).resolves.toBeUndefined();
   });
 });
@@ -99,5 +106,18 @@ describe('exportsRouter.getDownloadUrl', () => {
   it('returns the download URL for benchmark kind', async () => {
     const result = await caller.exports.getDownloadUrl({ kind: 'benchmark' });
     expect(result.url).toBe('/api/export/benchmark.zip');
+  });
+
+  it('encodes filters into the download URL query string', async () => {
+    const result = await caller.exports.getDownloadUrl({
+      kind: 'benchmark',
+      search: 'cat',
+      shotType: 'close',
+      needsRevision: true,
+    });
+    expect(result.url).toContain('/api/export/benchmark.zip?');
+    expect(result.url).toContain('search=cat');
+    expect(result.url).toContain('shotType=close');
+    expect(result.url).toContain('needsRevision=true');
   });
 });

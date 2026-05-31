@@ -58,7 +58,11 @@ export function ImageGrid({
                   size="sm"
                   variant="ghost"
                   disabled={deleteBusyId === img.id}
-                  onClick={() => onDelete(img.id)}
+                  onClick={() => {
+                    if (window.confirm(`确定要删除图像 #${img.id} 吗？此操作不可撤销。`)) {
+                      onDelete(img.id);
+                    }
+                  }}
                   aria-label={`删除图像 ${img.id}`}
                 >
                   删

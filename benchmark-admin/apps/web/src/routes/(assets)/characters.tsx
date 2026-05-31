@@ -1,4 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router';
+import { useState } from 'react';
 import { AssetLibrary } from '@/components/asset-library/AssetLibrary';
 import { BatchToolbar } from '@/components/asset-library/BatchToolbar';
 import { CharacterDrawer } from '@/components/drawers/CharacterDrawer';
@@ -16,6 +17,7 @@ export const Route = createFileRoute('/(assets)/characters')({
 });
 
 function CharactersPage() {
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
   return (
     <section>
       <h1 className="mb-4 text-xl font-semibold tracking-tight">角色</h1>
@@ -23,7 +25,10 @@ function CharactersPage() {
         kind="character"
         filterFields={FIELDS}
         renderDrawer={(p) => <CharacterDrawer {...p} />}
-        headerActions={<BatchToolbar />}
+        selectionMode="multi"
+        selectedIds={selectedIds}
+        onSelectionChange={setSelectedIds}
+        headerActions={<BatchToolbar selectedIds={selectedIds} />}
       />
     </section>
   );

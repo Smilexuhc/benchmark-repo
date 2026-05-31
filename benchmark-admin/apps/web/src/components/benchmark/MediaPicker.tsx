@@ -55,18 +55,21 @@ export function MediaPicker({
     list.data?.pages.flatMap((p: { items: MediaItem[] }) => p.items) ?? [];
   const selected = items.filter((i: MediaItem) => selectedIds.includes(i.id));
 
-  // Reconcile after the drawer opens and the list has loaded — if a previously
-  // selected id is no longer present (deleted out-of-band elsewhere), drop it
-  // from the picker's selection so we don't keep submitting a stale id.
+  // Reconcile after the drawer opens and the ENTIRE list has loaded — if a
+  // previously selected id is no longer present (deleted out-of-band elsewhere),
+  // drop it from the picker's selection so we don't keep submitting a stale id.
+  // We only prune once there are no more pages (`hasNextPage` is false): `items`
+  // is flatMapped from LOADED pages only, so pruning before the full set is
+  // fetched would wrongly drop selections living on an unfetched page.
   // onChange is intentionally omitted from deps: parents inline a fresh closure
   // each render, so depending on it would re-fire the effect and loop.
   // biome-ignore lint/correctness/useExhaustiveDependencies: see note above
   useEffect(() => {
-    if (!open || list.isPending || items.length === 0) return;
+    if (!open || list.isPending || list.hasNextPage || items.length === 0) return;
     const known = new Set(items.map((i: MediaItem) => i.id));
     const surviving = selectedIds.filter((id) => known.has(id));
     if (surviving.length !== selectedIds.length) onChange(surviving);
-  }, [open, list.isPending, items, selectedIds]);
+  }, [open, list.isPending, list.hasNextPage, items, selectedIds]);
 
   function toggle(id: number) {
     if (multi) {

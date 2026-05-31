@@ -218,6 +218,31 @@ describe('batch-regenerate store', () => {
     expect(store.getState().status).toBe('cancelled');
   });
 
+  it('caps re-subscribes when a stream only ever emits pending and fails the stuck id', async () => {
+    void store.getState().start([5]);
+    await flush();
+
+    // Simulate a stream that keeps re-emitting `pending` for the same id and
+    // then ends each round, making no forward progress. Without the round cap
+    // this resubscribes forever; with the cap it bounds the rounds and then
+    // marks the stuck id failed.
+    let guard = 0;
+    while (store.getState().pending.length > 0 && guard < 50) {
+      const call = calls[calls.length - 1];
+      call?.push({ id: 5, status: 'pending' });
+      await flush();
+      call?.end();
+      await flush();
+      guard += 1;
+    }
+
+    expect(store.getState().pending).toEqual([]);
+    expect(store.getState().results[5]?.status).toBe('failed');
+    // Bounded: not an unbounded number of subscribe calls.
+    expect(calls.length).toBeLessThanOrEqual(6);
+    expect(store.getState().status).toBe('complete');
+  });
+
   it('reset() aborts in-flight and clears state', async () => {
     void store.getState().start([1]);
     await flush();

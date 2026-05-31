@@ -11,7 +11,11 @@ export const VideoBenchmarkItem = createSelectSchema(videoBenchmarkItems);
 export type VideoBenchmarkItemType = z.infer<typeof VideoBenchmarkItem>;
 
 export const MediaLink = createSelectSchema(videoBenchmarkMediaLinks);
-export const MediaLinkOut = MediaLink.extend({ url: z.string().url() });
+// url is a presigned URL, or '' when presigning degraded (one TOS failure must
+// not reject the whole payload) — so the contract allows the empty fallback.
+export const MediaLinkOut = MediaLink.extend({
+  url: z.union([z.string().url(), z.literal('')]),
+});
 export type MediaLinkOutType = z.infer<typeof MediaLinkOut>;
 
 export const BenchmarkComment = createSelectSchema(benchmarkItemComments);
@@ -32,7 +36,7 @@ export const MediaBundleInput = z.object({
 export type MediaBundleInputType = z.infer<typeof MediaBundleInput>;
 
 // Media grouped by role for outbound BenchmarkItemOut
-const MediaByRole = z.object({
+export const MediaByRole = z.object({
   character_image: z.array(MediaLinkOut).default([]),
   scene_image: z.array(MediaLinkOut).default([]),
   prop_image: z.array(MediaLinkOut).default([]),
@@ -40,6 +44,7 @@ const MediaByRole = z.object({
   video_input: MediaLinkOut.nullable().default(null),
   video_output: MediaLinkOut.nullable().default(null),
 });
+export type MediaByRoleType = z.infer<typeof MediaByRole>;
 
 export const BenchmarkItemOut = VideoBenchmarkItem.extend({
   media: MediaByRole,

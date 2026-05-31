@@ -1,4 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router';
+import { useState } from 'react';
 import { AssetLibrary } from '@/components/asset-library/AssetLibrary';
 import { BatchToolbar } from '@/components/asset-library/BatchToolbar';
 import { SceneDrawer } from '@/components/drawers/SceneDrawer';
@@ -19,6 +20,7 @@ export const Route = createFileRoute('/(assets)/scenes')({
 });
 
 function ScenesPage() {
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
   return (
     <section>
       <h1 className="mb-4 text-xl font-semibold tracking-tight">场景</h1>
@@ -26,7 +28,10 @@ function ScenesPage() {
         kind="scene"
         filterFields={FIELDS}
         renderDrawer={(p) => <SceneDrawer {...p} />}
-        headerActions={<BatchToolbar />}
+        selectionMode="multi"
+        selectedIds={selectedIds}
+        onSelectionChange={setSelectedIds}
+        headerActions={<BatchToolbar selectedIds={selectedIds} />}
       />
     </section>
   );
