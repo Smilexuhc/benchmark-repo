@@ -23,6 +23,7 @@ export const env = createEnv({
       .min(64),
     ADMIN_EMAIL: z.string().email(),
     ADMIN_PASSWORD: z.string().min(1),
+    AI_MAX_CONCURRENCY: z.coerce.number().int().positive().default(3),
   },
   runtimeEnv: process.env,
 });
