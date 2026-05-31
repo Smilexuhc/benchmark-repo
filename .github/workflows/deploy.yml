@@ -1,0 +1,71 @@
+name: Deploy benchmark-admin
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'benchmark-admin/**'
+
+env:
+  CR_NAMESPACE: ${{ secrets.CR_NAMESPACE }}
+  IMAGE_TAG: ${{ github.sha }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to Volcengine CR
+        uses: docker/login-action@v3
+        with:
+          registry: cr.volces.com
+          username: ${{ secrets.CR_USER }}
+          password: ${{ secrets.CR_PASSWORD }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push API image
+        uses: docker/build-push-action@v6
+        with:
+          context: benchmark-admin
+          file: benchmark-admin/Dockerfile
+          target: api
+          push: true
+          tags: |
+            cr.volces.com/${{ env.CR_NAMESPACE }}/benchmark-admin-api:${{ env.IMAGE_TAG }}
+            cr.volces.com/${{ env.CR_NAMESPACE }}/benchmark-admin-api:latest
+          cache-from: type=registry,ref=cr.volces.com/${{ env.CR_NAMESPACE }}/benchmark-admin-api:buildcache
+          cache-to:   type=registry,ref=cr.volces.com/${{ env.CR_NAMESPACE }}/benchmark-admin-api:buildcache,mode=max
+
+      - name: Build and push nginx image
+        uses: docker/build-push-action@v6
+        with:
+          context: benchmark-admin
+          file: benchmark-admin/nginx/Dockerfile
+          push: true
+          tags: |
+            cr.volces.com/${{ env.CR_NAMESPACE }}/benchmark-admin-nginx:${{ env.IMAGE_TAG }}
+            cr.volces.com/${{ env.CR_NAMESPACE }}/benchmark-admin-nginx:latest
+          cache-from: type=registry,ref=cr.volces.com/${{ env.CR_NAMESPACE }}/benchmark-admin-nginx:buildcache
+          cache-to:   type=registry,ref=cr.volces.com/${{ env.CR_NAMESPACE }}/benchmark-admin-nginx:buildcache,mode=max
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Deploy to ECS via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.ECS_HOST }}
+          username: ${{ secrets.ECS_USER }}
+          key: ${{ secrets.ECS_SSH_KEY }}
+          script: |
+            cd /opt/benchmark-admin
+            export CR_NAMESPACE=${{ env.CR_NAMESPACE }}
+            export IMAGE_TAG=${{ env.IMAGE_TAG }}
+            docker compose pull
+            docker compose up -d --remove-orphans
+            docker image prune -f
