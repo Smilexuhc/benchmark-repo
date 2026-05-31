@@ -1,16 +1,21 @@
 import { createFileRoute } from '@tanstack/react-router';
+import { BenchmarkList } from '@/components/benchmark/BenchmarkList';
+import { StatsDashboard } from '@/components/benchmark/StatsDashboard';
 
 export const Route = createFileRoute('/benchmark')({
-  component: BenchmarkPlaceholder,
+  component: BenchmarkPage,
 });
 
-function BenchmarkPlaceholder() {
+function BenchmarkPage() {
   return (
-    <section>
-      <h1 className="text-xl font-semibold tracking-tight">视频基准</h1>
-      <p className="mt-2 text-sm text-[hsl(var(--muted-foreground))]">
-        视频基准评测页面将在后续增量（U18）接入。
-      </p>
+    <section className="grid grid-cols-[1fr_280px] gap-6">
+      <div>
+        <h1 className="mb-4 text-xl font-semibold tracking-tight">视频基准</h1>
+        <BenchmarkList />
+      </div>
+      <aside>
+        <StatsDashboard />
+      </aside>
     </section>
   );
 }

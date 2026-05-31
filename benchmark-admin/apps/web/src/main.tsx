@@ -1,8 +1,9 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { RouterProvider, createRouter } from '@tanstack/react-router';
+import { NuqsAdapter } from 'nuqs/adapters/react';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { trpc, trpcClient } from './lib/trpc.js';
+import { trpc, trpcReactClient } from './lib/trpc.js';
 import './styles/tailwind.css';
 
 import { routeTree } from './routeTree.gen.js';
@@ -22,9 +23,11 @@ if (!root) throw new Error('No root element');
 
 createRoot(root).render(
   <StrictMode>
-    <trpc.Provider client={trpcClient} queryClient={queryClient}>
+    <trpc.Provider client={trpcReactClient} queryClient={queryClient}>
       <QueryClientProvider client={queryClient}>
-        <RouterProvider router={router} />
+        <NuqsAdapter>
+          <RouterProvider router={router} />
+        </NuqsAdapter>
       </QueryClientProvider>
     </trpc.Provider>
   </StrictMode>,
