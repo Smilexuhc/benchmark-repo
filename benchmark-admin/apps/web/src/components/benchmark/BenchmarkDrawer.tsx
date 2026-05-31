@@ -15,6 +15,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { type RouterOutputs, trpc } from '@/lib/trpc';
 
 type MediaLink = RouterOutputs['benchmark']['get']['media']['character_image'][number];
+import { Field } from '@/components/drawers/shared/Field';
 import { BenchmarkComments } from './BenchmarkComments';
 import { MediaPicker } from './MediaPicker';
 
@@ -87,18 +88,23 @@ export function BenchmarkDrawer({ id, onClose, onSaved }: BenchmarkDrawerProps) 
 
   useEffect(() => {
     if (!isNew && get.data) {
-      form.reset({
-        shotType: get.data.shotType,
-        taskType: get.data.taskType,
-        questionType: get.data.questionType,
-        manualTag: get.data.manualTag,
-        scene: get.data.scene,
-        screenSize: get.data.screenSize,
-        textPrompt: get.data.textPrompt,
-        judgingCriteria: get.data.judgingCriteria,
-        score: get.data.score,
-        needsRevision: get.data.needsRevision,
-      });
+      // keepDirtyValues so a post-save / post-AI refetch doesn't overwrite
+      // fields the user has edited but not yet submitted.
+      form.reset(
+        {
+          shotType: get.data.shotType,
+          taskType: get.data.taskType,
+          questionType: get.data.questionType,
+          manualTag: get.data.manualTag,
+          scene: get.data.scene,
+          screenSize: get.data.screenSize,
+          textPrompt: get.data.textPrompt,
+          judgingCriteria: get.data.judgingCriteria,
+          score: get.data.score,
+          needsRevision: get.data.needsRevision,
+        },
+        { keepDirtyValues: true },
+      );
       setMedia({
         characterImageIds: get.data.media.character_image.map((l: MediaLink) => l.mediaId),
         sceneImageIds: get.data.media.scene_image.map((l: MediaLink) => l.mediaId),
@@ -248,18 +254,3 @@ export function BenchmarkDrawer({ id, onClose, onSaved }: BenchmarkDrawerProps) 
   );
 }
 
-function Field({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    // biome-ignore lint/a11y/noLabelWithoutControl: wraps an Input child component which biome can't detect
-    <label className="block space-y-1.5 text-sm">
-      <span className="font-medium">{label}</span>
-      {children}
-    </label>
-  );
-}

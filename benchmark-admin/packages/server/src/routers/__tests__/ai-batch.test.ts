@@ -53,9 +53,10 @@ async function collectBatch(
   // biome-ignore lint/suspicious/noExplicitAny: tRPC caller type
   caller: any,
   ids: number[],
+  batchKey = `test-${Math.random().toString(36).slice(2)}`,
 ): Promise<{ id: number; status: string; imageKey?: string; error?: string }[]> {
   const events: { id: number; status: string; imageKey?: string; error?: string }[] = [];
-  const sub = await caller.ai.batchRegenerate({ ids });
+  const sub = await caller.ai.batchRegenerate({ ids, batchKey });
   for await (const event of sub) {
     events.push(event);
   }
@@ -126,7 +127,7 @@ describe('aiRouter.batchRegenerate', () => {
     const { assetImages } = await import('@benchmark-admin/shared/db/schema');
     const { eq } = await import('drizzle-orm');
 
-    const sub = await caller.ai.batchRegenerate({ ids: [asset.id] });
+    const sub = await caller.ai.batchRegenerate({ ids: [asset.id], batchKey: 'test-observable' });
     let dbRowFoundBeforeDone = false;
 
     for await (const event of sub) {

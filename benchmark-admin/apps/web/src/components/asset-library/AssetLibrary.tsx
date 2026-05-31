@@ -36,12 +36,23 @@ export function AssetLibrary({
     [filterState.filters],
   );
 
-  const list = trpc.assets.list.useQuery({
-    kind,
-    deletedOnly: filterState.deletedOnly,
-    search: debouncedSearch || undefined,
-    filters: serverFilters,
-  });
+  const list = trpc.assets.list.useInfiniteQuery(
+    {
+      kind,
+      deletedOnly: filterState.deletedOnly,
+      search: debouncedSearch || undefined,
+      filters: serverFilters,
+    },
+    {
+      // Server returns null when there is no next page.
+      getNextPageParam: (lastPage: { nextCursor: number | null }) =>
+        lastPage.nextCursor ?? undefined,
+      // Presigned URLs are valid for ~1h (storage.getPresignedUrl default).
+      // 30 min staleTime stops every refetch from re-signing the entire list
+      // and re-downloading every cached image (P1: presigned URL cache busting).
+      staleTime: 30 * 60_000,
+    },
+  );
 
   const utils = trpc.useUtils();
 
@@ -58,7 +69,8 @@ export function AssetLibrary({
     setDrawerId(id);
   }
 
-  const items: AssetCardData[] = list.data?.items ?? [];
+  const items: AssetCardData[] =
+    list.data?.pages.flatMap((p: { items: AssetCardData[] }) => p.items) ?? [];
 
   return (
     <div className="grid grid-cols-[240px_1fr] gap-6">
@@ -99,20 +111,34 @@ export function AssetLibrary({
             暂无结果
           </div>
         ) : (
-          <ul
-            aria-label="资源卡片"
-            className="grid list-none grid-cols-2 gap-3 p-0 sm:grid-cols-3 lg:grid-cols-4"
-          >
-            {items.map((asset) => (
-              <li key={asset.id}>
-                <AssetCard
-                  asset={asset}
-                  onClick={onCardClick}
-                  selected={selectedIds.includes(asset.id)}
-                />
-              </li>
-            ))}
-          </ul>
+          <>
+            <ul
+              aria-label="资源卡片"
+              className="grid list-none grid-cols-2 gap-3 p-0 sm:grid-cols-3 lg:grid-cols-4"
+            >
+              {items.map((asset) => (
+                <li key={asset.id}>
+                  <AssetCard
+                    asset={asset}
+                    onClick={onCardClick}
+                    selected={selectedIds.includes(asset.id)}
+                  />
+                </li>
+              ))}
+            </ul>
+            {list.hasNextPage ? (
+              <div className="mt-4 flex justify-center">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => list.fetchNextPage()}
+                  disabled={list.isFetchingNextPage}
+                >
+                  {list.isFetchingNextPage ? '加载中…' : '加载更多'}
+                </Button>
+              </div>
+            ) : null}
+          </>
         )}
       </div>
 

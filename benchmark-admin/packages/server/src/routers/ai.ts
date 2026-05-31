@@ -77,12 +77,30 @@ export const aiRouter = t.router({
     }),
 
   batchRegenerate: protectedProcedure
-    .input(z.object({ ids: z.array(z.number().int().positive()) }))
+    .input(
+      z.object({
+        ids: z.array(z.number().int().positive()),
+        // Per-run idempotency key generated client-side; sent on every (re)subscribe
+        // for a single run so the server can skip ids it already completed in this
+        // batch on reconnect (P0-2 contract — see JUJ-22).
+        batchKey: z.string().min(1),
+      }),
+    )
     .subscription(async function* ({ input }) {
       for (const id of input.ids) {
         yield { id, status: 'pending' as const };
 
         try {
+          // Idempotency: if the (batchKey, id) pair has already completed in
+          // this run, replay the cached done event without calling the AI or
+          // inserting another row. Stops duplicate media + paid OpenRouter
+          // calls when an SSE connection drops between insert and yield.
+          const cached = getCompleted(input.batchKey, id);
+          if (cached) {
+            yield { id, status: 'done' as const, imageKey: cached };
+            continue;
+          }
+
           const [asset] = await db
             .select({ id: assets.id, kind: assets.kind, data: assets.data })
             .from(assets)
@@ -101,10 +119,15 @@ export const aiRouter = t.router({
 
           const { objectKey } = await ai.generateImage(prompt);
 
-          // DB write BEFORE yield — a dropped connection means re-subscribe for unfinished ids
+          // DB write BEFORE yield — at-least-once: a dropped connection after
+          // insert is recovered by the resubscribe + dedup path above.
           await db
             .insert(assetImages)
             .values({ assetId: id, objectKey, source: 'generated', mediaType: 'image' });
+
+          // Record completion AFTER the insert so a crash between the two
+          // doesn't lock in a key that isn't backed by a row.
+          recordCompleted(input.batchKey, id, objectKey);
 
           yield { id, status: 'done' as const, imageKey: objectKey };
         } catch (err) {
@@ -117,3 +140,44 @@ export const aiRouter = t.router({
       }
     }),
 });
+
+// ── batchKey → (id → objectKey) idempotency cache ─────────────────────────────
+//
+// Single-instance, in-memory. Single-admin deploy posture means at most one
+// pod handles a given batch run; an eventual multi-instance deploy would need
+// shared state (Postgres table). TTL prevents unbounded growth.
+
+const COMPLETION_TTL_MS = 30 * 60_000;
+type CompletionEntry = { results: Map<number, string>; expiresAt: number };
+const batchCompletions = new Map<string, CompletionEntry>();
+
+function purgeExpired(now: number): void {
+  for (const [key, entry] of batchCompletions) {
+    if (entry.expiresAt <= now) batchCompletions.delete(key);
+  }
+}
+
+function getCompleted(batchKey: string, id: number): string | undefined {
+  const now = Date.now();
+  purgeExpired(now);
+  const entry = batchCompletions.get(batchKey);
+  if (!entry) return undefined;
+  return entry.results.get(id);
+}
+
+function recordCompleted(batchKey: string, id: number, objectKey: string): void {
+  const now = Date.now();
+  purgeExpired(now);
+  let entry = batchCompletions.get(batchKey);
+  if (!entry) {
+    entry = { results: new Map(), expiresAt: now + COMPLETION_TTL_MS };
+    batchCompletions.set(batchKey, entry);
+  }
+  entry.results.set(id, objectKey);
+  entry.expiresAt = now + COMPLETION_TTL_MS;
+}
+
+// Exposed for tests so they can simulate a fresh process between runs.
+export function __resetBatchCompletionsForTests(): void {
+  batchCompletions.clear();
+}

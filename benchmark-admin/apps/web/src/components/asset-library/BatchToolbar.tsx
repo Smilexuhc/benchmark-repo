@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Drawer } from '@/components/ui/drawer';
@@ -6,11 +6,7 @@ import { Input } from '@/components/ui/input';
 import { trpc } from '@/lib/trpc';
 import { useBatchRegenerateStore } from '@/stores/batch-regenerate';
 
-export type BatchToolbarProps = {
-  kind: 'character' | 'scene' | 'prop';
-};
-
-export function BatchToolbar({ kind }: BatchToolbarProps) {
+export function BatchToolbar() {
   const [open, setOpen] = useState(false);
   const [idsInput, setIdsInput] = useState('');
   const status = useBatchRegenerateStore((s) => s.status);
@@ -20,6 +16,12 @@ export function BatchToolbar({ kind }: BatchToolbarProps) {
   const start = useBatchRegenerateStore((s) => s.start);
   const retryFailed = useBatchRegenerateStore((s) => s.retryFailed);
   const reset = useBatchRegenerateStore((s) => s.reset);
+  const cancel = useBatchRegenerateStore((s) => s.cancel);
+
+  // Cancel any in-flight subscription when the consuming component unmounts
+  // (route change, page navigation). Without this the SSE stream and its
+  // writes to shared store state would outlive the UI that started it.
+  useEffect(() => () => cancel(), [cancel]);
 
   const totals = Object.values(results);
   const done = totals.filter((r) => r.status === 'done').length;
@@ -40,7 +42,6 @@ export function BatchToolbar({ kind }: BatchToolbarProps) {
         <Button size="sm" variant="outline" onClick={() => setOpen(true)}>
           批量重生成
         </Button>
-        {kind === 'character' ? null /* export limited to benchmark kind today */ : null}
       </div>
 
       {open ? (
@@ -81,6 +82,14 @@ export function BatchToolbar({ kind }: BatchToolbarProps) {
                 onClick={() => void retryFailed()}
               >
                 重试失败 ({failed})
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={status !== 'running'}
+                onClick={cancel}
+              >
+                取消
               </Button>
               <Button size="sm" variant="ghost" onClick={reset} disabled={status === 'running'}>
                 清空

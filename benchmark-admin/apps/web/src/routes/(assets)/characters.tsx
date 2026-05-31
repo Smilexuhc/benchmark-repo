@@ -23,7 +23,7 @@ function CharactersPage() {
         kind="character"
         filterFields={FIELDS}
         renderDrawer={(p) => <CharacterDrawer {...p} />}
-        headerActions={<BatchToolbar kind="character" />}
+        headerActions={<BatchToolbar />}
       />
     </section>
   );

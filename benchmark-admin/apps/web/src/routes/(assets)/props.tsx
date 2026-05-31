@@ -25,7 +25,7 @@ function PropsPage() {
         kind="prop"
         filterFields={FIELDS}
         renderDrawer={(p) => <PropDrawer {...p} />}
-        headerActions={<BatchToolbar kind="prop" />}
+        headerActions={<BatchToolbar />}
       />
     </section>
   );

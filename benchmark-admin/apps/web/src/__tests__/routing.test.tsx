@@ -97,4 +97,39 @@ describe('routing shell + auth guard', () => {
     await waitFor(() => expect(router.state.location.pathname).toBe('/benchmark'));
     expect(await screen.findByRole('heading', { name: '视频基准' })).toBeInTheDocument();
   });
+
+  it('signing out from any page returns to /login (U15 missing case)', async () => {
+    let signedIn = true;
+    setFetch(async (input, init) => {
+      const url = String(input);
+      if (url.endsWith('/api/auth/me')) {
+        return new Response(
+          JSON.stringify({
+            session: signedIn ? { email: 'admin@example.com' } : null,
+          } satisfies SessionResponse),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }
+      if (url.endsWith('/api/auth/logout') && init?.method === 'POST') {
+        signedIn = false;
+        return new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+
+    const router = buildRouter(['/characters']);
+    renderApp(router);
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+
+    // Authenticated landing — the header shows the user and the sign-out button.
+    await screen.findByLabelText('signed in user');
+    const logout = await screen.findByRole('button', { name: /退出登录/ });
+    await user.click(logout);
+
+    await waitFor(() => expect(router.state.location.pathname).toBe('/login'));
+    expect(await screen.findByRole('heading', { name: '登录' })).toBeInTheDocument();
+  });
 });
