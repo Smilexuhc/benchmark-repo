@@ -2,7 +2,9 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { RouterProvider, createMemoryHistory, createRouter } from '@tanstack/react-router';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { NuqsTestingAdapter } from 'nuqs/adapters/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { trpc, trpcReactClient } from '@/lib/trpc';
 import { routeTree } from '@/routeTree.gen';
 
 type SessionResponse = { session: { email: string } | null };
@@ -23,9 +25,13 @@ function renderApp(router: ReturnType<typeof buildRouter>) {
     defaultOptions: { queries: { retry: false } },
   });
   return render(
-    <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
-    </QueryClientProvider>,
+    <trpc.Provider client={trpcReactClient} queryClient={queryClient}>
+      <QueryClientProvider client={queryClient}>
+        <NuqsTestingAdapter>
+          <RouterProvider router={router} />
+        </NuqsTestingAdapter>
+      </QueryClientProvider>
+    </trpc.Provider>,
   );
 }
 

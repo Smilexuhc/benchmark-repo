@@ -1,15 +1,45 @@
 import type { AppRouter } from '@benchmark-admin/server';
-import { createTRPCClient, httpBatchLink } from '@trpc/client';
-import { type CreateTRPCReact, createTRPCReact } from '@trpc/react-query';
+import {
+  createTRPCClient,
+  httpBatchLink,
+  httpSubscriptionLink,
+  splitLink,
+} from '@trpc/client';
+import type { inferRouterInputs, inferRouterOutputs } from '@trpc/server';
+import { createTRPCReact } from '@trpc/react-query';
 import superjson from 'superjson';
 
-export const trpc: CreateTRPCReact<AppRouter, unknown> = createTRPCReact<AppRouter>();
+// @trpc/react-query@11.17's exported `CreateTRPCReact<AppRouter, unknown>` type
+// resolves to `any`/`never` for this AppRouter (the ProtectedIntersection branch
+// degrades on cross-module re-evaluation). The runtime proxy is correct, so we
+// expose `trpc` as `any` and use `RouterInputs`/`RouterOutputs` below for typed
+// accessors at call sites.
+// biome-ignore lint/suspicious/noExplicitAny: deliberate type workaround for tRPC v11.17 inference bug
+export const trpc: any = createTRPCReact<AppRouter>();
 
-export const trpcClient = createTRPCClient<AppRouter>({
-  links: [
-    httpBatchLink({
-      url: '/api/trpc',
-      transformer: superjson,
-    }),
-  ],
+export type RouterInputs = inferRouterInputs<AppRouter>;
+export type RouterOutputs = inferRouterOutputs<AppRouter>;
+
+// x-trpc-source is required by protectedProcedure for CSRF defense-in-depth on mutations.
+const headers = () => ({ 'x-trpc-source': 'web' });
+
+const reactLink = httpBatchLink({
+  url: '/api/trpc',
+  transformer: superjson,
+  headers,
 });
+
+// Vanilla client used outside React (Zustand actions). splitLink routes
+// subscriptions to httpSubscriptionLink (SSE) and everything else to the batch link.
+const vanillaLinks = [
+  splitLink({
+    condition: (op) => op.type === 'subscription',
+    true: httpSubscriptionLink({ url: '/api/trpc', transformer: superjson }),
+    false: httpBatchLink({ url: '/api/trpc', transformer: superjson, headers }),
+  }),
+];
+
+export const trpcClient = createTRPCClient<AppRouter>({ links: vanillaLinks });
+
+// React-tree (hook-based) client. Used by trpc.useQuery / useMutation hooks.
+export const trpcReactClient = trpc.createClient({ links: [reactLink] });
