@@ -1,5 +1,5 @@
-import { publicProcedure } from './procedures.js';
 import { t } from './init.js';
+import { publicProcedure } from './procedures.js';
 
 export const appRouter = t.router({
   health: publicProcedure.query(() => ({

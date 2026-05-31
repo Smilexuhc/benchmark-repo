@@ -4,7 +4,13 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./env": "./src/env.ts"
+    "./env": "./src/env.ts",
+    "./db/schema": "./src/db/schema.ts",
+    "./schemas/assets": "./src/schemas/assets.ts",
+    "./schemas/benchmark": "./src/schemas/benchmark.ts",
+    "./schemas/prompts": "./src/schemas/prompts.ts",
+    "./constants/orderings": "./src/constants/orderings.ts",
+    "./constants/question-types": "./src/constants/question-types.ts"
   },
   "scripts": {
     "build": "tsc --build",
@@ -12,6 +18,8 @@
   },
   "dependencies": {
     "@t3-oss/env-core": "^0.12.0",
+    "drizzle-orm": "^0.38.4",
+    "drizzle-zod": "^0.7.0",
     "zod": "^3.24.1"
   },
   "devDependencies": {

@@ -16,6 +16,8 @@
     "@aws-sdk/s3-request-presigner": "^3.726.1",
     "@benchmark-admin/shared": "workspace:*",
     "@neondatabase/serverless": "^0.10.4",
+    "@smithy/core": "*",
+    "@smithy/types": "*",
     "@trpc/server": "^11.0.0",
     "drizzle-orm": "^0.38.4",
     "openai": "^4.79.1",
@@ -28,6 +30,7 @@
     "@types/node": "^22.10.6",
     "@types/pg": "^8.20.0",
     "@types/ws": "^8.5.14",
+    "aws-sdk-client-mock": "^4.1.0",
     "fastify": "^5.8.5",
     "typescript": "^5.7.3",
     "vitest": "^2.1.9"

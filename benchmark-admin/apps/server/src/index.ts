@@ -1,7 +1,7 @@
-import fastify from 'fastify';
+import { appRouter, createContext } from '@benchmark-admin/server';
 import cors from '@fastify/cors';
 import { fastifyTRPCPlugin } from '@trpc/server/adapters/fastify';
-import { appRouter, createContext } from '@benchmark-admin/server';
+import fastify from 'fastify';
 
 const server = fastify({ logger: true });
 

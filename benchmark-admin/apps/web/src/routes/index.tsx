@@ -8,9 +8,7 @@ function Home() {
     <div className="p-8">
       <h1 className="text-2xl font-bold">Benchmark Admin</h1>
       {health.data && (
-        <p className="mt-2 text-sm text-gray-500">
-          Server time: {health.data.ts.toISOString()}
-        </p>
+        <p className="mt-2 text-sm text-gray-500">Server time: {health.data.ts.toISOString()}</p>
       )}
     </div>
   );
