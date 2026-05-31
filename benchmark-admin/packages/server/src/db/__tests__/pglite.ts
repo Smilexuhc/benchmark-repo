@@ -4,6 +4,7 @@ import { drizzle } from 'drizzle-orm/pglite';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { sql } from 'drizzle-orm';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -32,4 +33,19 @@ export async function getTestDb(): Promise<TestDb> {
 
   _db = drizzle(pglite, { schema });
   return _db;
+}
+
+// Truncates all tables in FK-safe order, resetting identity sequences.
+// Call in beforeEach to ensure count-based assertions are order-independent.
+export async function resetTestDb(): Promise<void> {
+  const db = await getTestDb();
+  await db.execute(sql`
+    TRUNCATE
+      video_benchmark_media_links,
+      benchmark_item_comments,
+      video_benchmark_items,
+      asset_images,
+      assets
+    RESTART IDENTITY CASCADE
+  `);
 }

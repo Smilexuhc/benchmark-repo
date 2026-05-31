@@ -6,8 +6,10 @@ import {
 } from '@benchmark-admin/shared/lib/prompts/character';
 import {
   buildExtractUserMessage,
+  buildPropExtractUserMessage,
   buildSceneExtractUserMessage,
   EXTRACT_SYSTEM,
+  PROP_EXTRACT_SYSTEM,
   SCENE_EXTRACT_SYSTEM,
 } from '@benchmark-admin/shared/lib/prompts/extract-fields';
 import { buildPropUserMessage, PROP_PROMPT_SYSTEM } from '@benchmark-admin/shared/lib/prompts/prop';
@@ -188,9 +190,8 @@ export async function extractFields(
       break;
     }
     case 'prop': {
-      // Props reuse the character extract system with only relevant fields
-      system = EXTRACT_SYSTEM;
-      userMsg = buildExtractUserMessage(description, options);
+      system = PROP_EXTRACT_SYSTEM;
+      userMsg = buildPropExtractUserMessage(description, options);
       break;
     }
   }

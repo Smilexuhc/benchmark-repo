@@ -13,6 +13,7 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
 } from 'drizzle-orm/pg-core';
 
 // assets.cover_image_id → asset_images.id creates a circular reference.
@@ -119,18 +120,27 @@ export const videoBenchmarkMediaLinks = pgTable(
     unique('uq_media_links_item_role_media').on(t.itemId, t.role, t.mediaId),
     index('idx_media_links_item_role').on(t.itemId, t.role),
     index('idx_media_links_media').on(t.mediaId),
+    // Partial unique index: single-cardinality roles may appear at most once per item.
+    // Already present in 0000 migration SQL; expressed here so schema stays in sync.
+    uniqueIndex('idx_media_links_single_cardinality')
+      .on(t.itemId, t.role)
+      .where(sql`role IN ('audio_input', 'video_input', 'video_output')`),
   ],
 );
 
-export const benchmarkItemComments = pgTable('benchmark_item_comments', {
-  id: bigserial('id', { mode: 'number' }).primaryKey(),
-  itemId: bigint('item_id', { mode: 'number' })
-    .notNull()
-    .references(() => videoBenchmarkItems.id, { onDelete: 'cascade' }),
-  author: text('author').notNull().default(''),
-  body: text('body').notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-});
+export const benchmarkItemComments = pgTable(
+  'benchmark_item_comments',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    itemId: bigint('item_id', { mode: 'number' })
+      .notNull()
+      .references(() => videoBenchmarkItems.id, { onDelete: 'cascade' }),
+    author: text('author').notNull().default(''),
+    body: text('body').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [index('idx_bic_item_id_created').on(t.itemId, t.createdAt)],
+);
 
 // ── Relations ──────────────────────────────────────────────────────────────────
 

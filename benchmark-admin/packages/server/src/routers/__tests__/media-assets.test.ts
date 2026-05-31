@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.hoisted(() => {
   process.env.DATABASE_URL = 'postgresql://user:pass@host/db';
@@ -48,44 +48,73 @@ describe('mediaAssetsRouter', () => {
     caller = appRouter.createCaller(CTX);
   });
 
+  beforeEach(async () => {
+    const { resetTestDb } = await import('../../db/__tests__/pglite.js');
+    await resetTestDb();
+  });
+
   it('lists all images without dedup', async () => {
-    // Create an asset with two images sharing the same object key
     const asset = await caller.assets.create({ kind: 'character', name: 'Dedup Test', data: {} });
     await caller.assets.attachImage({ id: asset.id, objectKey: 'images/shared-key.png', source: 'test' });
     await caller.assets.attachImage({ id: asset.id, objectKey: 'images/shared-key.png', source: 'test' });
 
-    const result = await caller.mediaAssets.list({ dedup: false });
-    const shared = result.filter((r: { objectKey: string }) => r.objectKey === 'images/shared-key.png');
+    const { items } = await caller.mediaAssets.list({ dedup: false });
+    const shared = items.filter((r: { objectKey: string }) => r.objectKey === 'images/shared-key.png');
     expect(shared.length).toBe(2);
   });
 
   it('deduplicates by object_key when dedup=true', async () => {
-    const resultDedup = await caller.mediaAssets.list({ dedup: true });
-    const resultAll = await caller.mediaAssets.list({ dedup: false });
+    const asset = await caller.assets.create({ kind: 'character', name: 'Dedup Test 2', data: {} });
+    await caller.assets.attachImage({ id: asset.id, objectKey: 'images/dup-key.png', source: 'test' });
+    await caller.assets.attachImage({ id: asset.id, objectKey: 'images/dup-key.png', source: 'test' });
 
-    // Dedup should have fewer or equal rows than full listing when duplicates exist
-    expect(resultDedup.length).toBeLessThanOrEqual(resultAll.length);
+    const { items: dedupItems } = await caller.mediaAssets.list({ dedup: true });
+    const { items: allItems } = await caller.mediaAssets.list({ dedup: false });
+
+    expect(dedupItems.length).toBeLessThanOrEqual(allItems.length);
 
     // No duplicate object keys in dedup result
-    const keys = resultDedup.map((r: { objectKey: string }) => r.objectKey);
+    const keys = dedupItems.map((r: { objectKey: string }) => r.objectKey);
     const uniqueKeys = new Set(keys);
     expect(keys.length).toBe(uniqueKeys.size);
   });
 
   it('filters by kind', async () => {
-    await caller.assets.create({ kind: 'scene', name: 'Scene For Filter', data: {} });
-    // attach image to scene
     const sceneAsset = await caller.assets.create({ kind: 'scene', name: 'Scene2', data: {} });
     await caller.assets.attachImage({ id: sceneAsset.id, objectKey: 'images/scene-img.png', source: 'test' });
 
-    const result = await caller.mediaAssets.list({ kind: 'scene', dedup: false });
-    expect(result.every((r: { assetKind: string }) => r.assetKind === 'scene')).toBe(true);
+    const { items } = await caller.mediaAssets.list({ kind: 'scene', dedup: false });
+    expect(items.every((r: { assetKind: string }) => r.assetKind === 'scene')).toBe(true);
   });
 
   it('each row includes a presigned url', async () => {
-    const result = await caller.mediaAssets.list({ dedup: false });
-    for (const row of result) {
+    const asset = await caller.assets.create({ kind: 'character', name: 'URL Test', data: {} });
+    await caller.assets.attachImage({ id: asset.id, objectKey: 'images/url-test.png', source: 'test' });
+
+    const { items } = await caller.mediaAssets.list({ dedup: false });
+    for (const row of items) {
       expect(row.url).toMatch(/^https:\/\//);
     }
+  });
+
+  it('paginates with cursor', async () => {
+    const asset = await caller.assets.create({ kind: 'prop', name: 'Pagination Asset', data: {} });
+    // Create 55 images to exceed the LIMIT of 50
+    for (let i = 0; i < 55; i++) {
+      await caller.assets.attachImage({
+        id: asset.id,
+        objectKey: `images/paginated-${String(i).padStart(3, '0')}.png`,
+        source: 'test',
+      });
+    }
+
+    const page1 = await caller.mediaAssets.list({ dedup: false });
+    expect(page1.items.length).toBe(50);
+    expect(page1.nextCursor).toBeTypeOf('number');
+
+    // biome-ignore lint/style/noNonNullAssertion: asserted toBeTypeOf('number') above
+    const page2 = await caller.mediaAssets.list({ dedup: false, cursor: page1.nextCursor! });
+    expect(page2.items.length).toBe(5);
+    expect(page2.nextCursor).toBeNull();
   });
 });

@@ -1,6 +1,7 @@
 import archiver from 'archiver';
 import ExcelJS from 'exceljs';
-import type { FastifyReply } from 'fastify';
+import type { FastifyReply, FastifyRequest } from 'fastify';
+import pLimit from 'p-limit';
 import { EXPORT_HEADERS } from '@benchmark-admin/shared/lib/exports/headers';
 import * as storage from '../storage/index.js';
 
@@ -9,6 +10,7 @@ export async function buildExportZip(
   items: Record<string, unknown>[],
   imageLinks: { objectKey: string; role: string; itemId: number }[],
   reply: FastifyReply,
+  request?: FastifyRequest,
 ): Promise<void> {
   const zip = archiver('zip', { zlib: { level: 6 } });
 
@@ -16,11 +18,21 @@ export async function buildExportZip(
   // biome-ignore lint/suspicious/noExplicitAny: Fastify raw ServerResponse
   zip.pipe((reply.raw as any));
 
-  // Set up done-promise BEFORE finalize() so we never miss the event
   const done = new Promise<void>((resolve, reject) => {
     zip.on('finish', resolve);
-    zip.on('error', reject);
+    zip.on('error', (err) => {
+      // Destroy socket so client receives a clean error rather than a partial ZIP
+      reply.raw.destroy(err);
+      reject(err);
+    });
   });
+
+  // Wire request abort to stop archiving mid-stream
+  if (request) {
+    request.raw.on('close', () => {
+      zip.abort();
+    });
+  }
 
   // Build XLSX manifest
   const wb = new ExcelJS.Workbook();
@@ -36,18 +48,28 @@ export async function buildExportZip(
   const xlsxBuffer = await wb.xlsx.writeBuffer();
   zip.append(Buffer.from(xlsxBuffer), { name: 'manifest.xlsx' });
 
-  // Append one image per item (first link per item wins)
+  // Append one image per item (first link per item wins) with bounded concurrency
   const seenItems = new Set<number>();
-  for (const link of imageLinks) {
-    if (seenItems.has(link.itemId)) continue;
-    seenItems.add(link.itemId);
-    try {
-      const bytes = await storage.getBytes(link.objectKey);
-      zip.append(bytes, { name: `images/${link.itemId}.png` });
-    } catch {
-      // Skip unavailable images — don't abort the whole export
-    }
-  }
+  const limit = pLimit(5);
+
+  const tasks = imageLinks
+    .filter((link) => {
+      if (seenItems.has(link.itemId)) return false;
+      seenItems.add(link.itemId);
+      return true;
+    })
+    .map((link) =>
+      limit(async () => {
+        try {
+          const bytes = await storage.getBytes(link.objectKey);
+          zip.append(bytes, { name: `images/${link.itemId}.png` });
+        } catch {
+          // Skip unavailable images — don't abort the whole export
+        }
+      }),
+    );
+
+  await Promise.all(tasks);
 
   zip.finalize();
   return done;
