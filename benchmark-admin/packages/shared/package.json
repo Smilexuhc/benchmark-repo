@@ -1,0 +1,34 @@
+{
+  "name": "@benchmark-admin/shared",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./env": "./src/env.ts",
+    "./db/schema": "./src/db/schema.ts",
+    "./schemas/assets": "./src/schemas/assets.ts",
+    "./schemas/benchmark": "./src/schemas/benchmark.ts",
+    "./schemas/prompts": "./src/schemas/prompts.ts",
+    "./constants/orderings": "./src/constants/orderings.ts",
+    "./constants/question-types": "./src/constants/question-types.ts",
+    "./lib/prompts/character": "./src/lib/prompts/character.ts",
+    "./lib/prompts/scene": "./src/lib/prompts/scene.ts",
+    "./lib/prompts/prop": "./src/lib/prompts/prop.ts",
+    "./lib/prompts/extract-fields": "./src/lib/prompts/extract-fields.ts",
+    "./lib/exports/headers": "./src/lib/exports/headers.ts"
+  },
+  "scripts": {
+    "build": "tsc --build",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@t3-oss/env-core": "^0.12.0",
+    "drizzle-orm": "^0.38.4",
+    "drizzle-zod": "^0.7.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.6",
+    "typescript": "^5.7.3"
+  }
+}
