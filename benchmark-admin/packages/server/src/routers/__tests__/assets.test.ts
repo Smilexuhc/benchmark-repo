@@ -186,4 +186,61 @@ describe('assetsRouter', () => {
       expect(fetched.images.every((i: { id: number }) => i.id !== img.id)).toBe(true);
     });
   });
+
+  describe('list payload trimming', () => {
+    it('list returns only the cover image per asset while get returns all images', async () => {
+      const asset = await caller.assets.create({
+        kind: 'character',
+        name: 'ManyImagesAsset',
+        data: {},
+      });
+
+      const attached = [];
+      for (let i = 0; i < 5; i++) {
+        attached.push(
+          await caller.assets.attachImage({
+            id: asset.id,
+            objectKey: `images/many-${i}-abc123def456789012345678901234.png`,
+            source: 'generated',
+          }),
+        );
+      }
+      await caller.assets.setCover({ id: asset.id, imageId: attached[2].id });
+
+      const { items } = await caller.assets.list({ kind: 'character' });
+      const listed = items.find((i: { id: number }) => i.id === asset.id);
+      expect(listed).toBeDefined();
+      expect(listed.images).toHaveLength(1);
+      expect(listed.images[0].id).toBe(attached[2].id);
+      expect(listed.coverImageId).toBe(attached[2].id);
+
+      const fetched = await caller.assets.get({ id: asset.id });
+      expect(fetched.images).toHaveLength(5);
+    });
+
+    it('list falls back to the lowest-id image when no cover is set', async () => {
+      const asset = await caller.assets.create({
+        kind: 'prop',
+        name: 'NoCoverAsset',
+        data: {},
+      });
+
+      const first = await caller.assets.attachImage({
+        id: asset.id,
+        objectKey: 'images/no-cover-1-abc123def456789012345678901234.png',
+        source: 'generated',
+      });
+      await caller.assets.attachImage({
+        id: asset.id,
+        objectKey: 'images/no-cover-2-abc123def456789012345678901234.png',
+        source: 'generated',
+      });
+
+      const { items } = await caller.assets.list({ kind: 'prop' });
+      const listed = items.find((i: { id: number }) => i.id === asset.id);
+      expect(listed.coverImageId).toBeNull();
+      expect(listed.images).toHaveLength(1);
+      expect(listed.images[0].id).toBe(first.id);
+    });
+  });
 });

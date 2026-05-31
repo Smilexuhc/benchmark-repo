@@ -29,28 +29,58 @@ async function fetchAssetWithImages(id: number) {
   return { ...asset, images: imagesWithUrls, coverImageId: asset.coverImageId ?? null };
 }
 
-async function fetchPageWithImages(ids: number[]) {
+// List payloads only render the cover image per asset (AssetCard picks
+// `images.find(id===coverImageId) ?? images[0]`). Returning every assetImages
+// row + presigning every URL inflates payloads and signs N URLs per card when
+// exactly one is needed. Detail fetches still go through `fetchAssetWithImages`
+// and keep the full image set.
+async function fetchPageWithCoverImage(ids: number[]) {
   if (ids.length === 0) return [];
 
   const assetRows = await db.select().from(assets).where(inArray(assets.id, ids));
-  const imageRows = await db
-    .select()
-    .from(assetImages)
-    .where(inArray(assetImages.assetId, ids));
 
-  const imagesWithUrls = await Promise.all(
-    imageRows.map(async (img) => ({
-      ...img,
-      url: await storage.getPresignedUrl(img.objectKey),
-    })),
-  );
-
-  const imagesByAsset = new Map<number, typeof imagesWithUrls>();
-  for (const img of imagesWithUrls) {
-    const list = imagesByAsset.get(img.assetId) ?? [];
-    list.push(img);
-    imagesByAsset.set(img.assetId, list);
+  // Bucket asset ids by whether they have an explicit cover; the cover-less
+  // fallback is "lowest image id for the asset" (matches the AssetCard fallback
+  // `images[0]` once images are sorted by id ascending).
+  const explicitCoverIds: number[] = [];
+  const assetsWithoutCover: number[] = [];
+  for (const a of assetRows) {
+    if (a.coverImageId !== null && a.coverImageId !== undefined) {
+      explicitCoverIds.push(a.coverImageId);
+    } else {
+      assetsWithoutCover.push(a.id);
+    }
   }
+
+  const [coverRows, fallbackRows] = await Promise.all([
+    explicitCoverIds.length > 0
+      ? db.select().from(assetImages).where(inArray(assetImages.id, explicitCoverIds))
+      : Promise.resolve([] as (typeof assetImages.$inferSelect)[]),
+    assetsWithoutCover.length > 0
+      ? db
+          .select()
+          .from(assetImages)
+          .where(inArray(assetImages.assetId, assetsWithoutCover))
+      : Promise.resolve([] as (typeof assetImages.$inferSelect)[]),
+  ]);
+
+  const coverByAssetId = new Map<number, typeof assetImages.$inferSelect>();
+  for (const img of coverRows) {
+    coverByAssetId.set(img.assetId, img);
+  }
+  // Pick the lowest-id image per asset that lacks an explicit cover.
+  for (const img of fallbackRows) {
+    const existing = coverByAssetId.get(img.assetId);
+    if (!existing || img.id < existing.id) coverByAssetId.set(img.assetId, img);
+  }
+
+  const selected = [...coverByAssetId.values()];
+  const urls = await Promise.all(selected.map((img) => storage.getPresignedUrl(img.objectKey)));
+  const imageWithUrlByAssetId = new Map<number, (typeof selected)[number] & { url: string }>();
+  selected.forEach((img, i) => {
+    const url = urls[i];
+    if (url !== undefined) imageWithUrlByAssetId.set(img.assetId, { ...img, url });
+  });
 
   // Preserve the order of ids (for cursor pagination ordering)
   const assetMap = new Map(assetRows.map((a) => [a.id, a]));
@@ -58,7 +88,12 @@ async function fetchPageWithImages(ids: number[]) {
     .map((id) => {
       const asset = assetMap.get(id);
       if (!asset) return null;
-      return { ...asset, images: imagesByAsset.get(id) ?? [], coverImageId: asset.coverImageId ?? null };
+      const cover = imageWithUrlByAssetId.get(id);
+      return {
+        ...asset,
+        images: cover ? [cover] : [],
+        coverImageId: asset.coverImageId ?? null,
+      };
     })
     .filter((a): a is NonNullable<typeof a> => a !== null);
 }
@@ -139,7 +174,7 @@ export const assetsRouter = t.router({
       const pageIds = rows.slice(0, LIMIT).map((r) => r.id);
       const nextCursor = hasMore && pageIds.length > 0 ? (pageIds[pageIds.length - 1] ?? null) : null;
 
-      const items = await fetchPageWithImages(pageIds);
+      const items = await fetchPageWithCoverImage(pageIds);
       return { items, nextCursor };
     }),
 
