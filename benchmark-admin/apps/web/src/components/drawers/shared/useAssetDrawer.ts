@@ -8,7 +8,14 @@ export function useAssetDrawer(kind: AssetKind, id: number) {
   const isNew = id === 0;
   const get = trpc.assets.get.useQuery(
     { id },
-    { enabled: !isNew, refetchOnWindowFocus: false },
+    {
+      enabled: !isNew,
+      refetchOnWindowFocus: false,
+      // assets.get returns presigned image URLs (~1h TTL) — keep the cached
+      // entry fresh long enough that opening the drawer twice doesn't re-sign
+      // every URL and re-download every image.
+      staleTime: 30 * 60_000,
+    },
   );
 
   const create = trpc.assets.create.useMutation();

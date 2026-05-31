@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { SceneViewColumn } from './SceneViewColumn';
 import { AiToolbar } from './shared/AiToolbar';
+import { Field } from './shared/Field';
 import { ImageGrid } from './shared/ImageGrid';
 import { useAssetDrawer } from './shared/useAssetDrawer';
 
@@ -52,16 +53,19 @@ export function SceneDrawer({
   useEffect(() => {
     if (ctx.asset && ctx.asset.kind === 'scene') {
       const a = ctx.asset;
-      form.reset({
-        name: a.name,
-        era: a.era ?? '',
-        genre: a.genre ?? '',
-        scene_type: a.data.scene_type ?? '',
-        mood: a.data.mood ?? '',
-        elements: a.data.elements?.join(', ') ?? '',
-        prompt: a.data.prompt ?? '',
-        description: a.data.description ?? '',
-      });
+      form.reset(
+        {
+          name: a.name,
+          era: a.era ?? '',
+          genre: a.genre ?? '',
+          scene_type: a.data.scene_type ?? '',
+          mood: a.data.mood ?? '',
+          elements: a.data.elements?.join(', ') ?? '',
+          prompt: a.data.prompt ?? '',
+          description: a.data.description ?? '',
+        },
+        { keepDirtyValues: true },
+      );
     }
   }, [ctx.asset, form]);
 
@@ -224,26 +228,3 @@ export function SceneDrawer({
   );
 }
 
-function Field({
-  label,
-  required,
-  error,
-  children,
-}: {
-  label: string;
-  required?: boolean;
-  error?: string | undefined;
-  children: React.ReactNode;
-}) {
-  return (
-    // biome-ignore lint/a11y/noLabelWithoutControl: wraps an Input child component which biome can't detect
-    <label className="block space-y-1.5 text-sm">
-      <span className="font-medium">
-        {label}
-        {required ? <span aria-hidden> *</span> : null}
-      </span>
-      {children}
-      {error ? <span className="text-xs text-[hsl(var(--destructive))]">{error}</span> : null}
-    </label>
-  );
-}

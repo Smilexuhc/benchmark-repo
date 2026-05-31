@@ -26,7 +26,7 @@ function ScenesPage() {
         kind="scene"
         filterFields={FIELDS}
         renderDrawer={(p) => <SceneDrawer {...p} />}
-        headerActions={<BatchToolbar kind="scene" />}
+        headerActions={<BatchToolbar />}
       />
     </section>
   );

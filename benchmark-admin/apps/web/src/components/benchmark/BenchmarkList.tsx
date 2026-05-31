@@ -25,15 +25,27 @@ export function BenchmarkList() {
   const [debouncedSearch] = useDebounce(state.search, 300);
   const [drawerId, setDrawerId] = useState<number | 'new' | null>(null);
 
-  const list = trpc.benchmark.list.useQuery({
-    search: debouncedSearch || undefined,
-    filters: {
-      shotType: state.shotType || undefined,
-      questionType: state.questionType || undefined,
+  const list = trpc.benchmark.list.useInfiniteQuery(
+    {
+      search: debouncedSearch || undefined,
+      filters: {
+        shotType: state.shotType || undefined,
+        questionType: state.questionType || undefined,
+      },
     },
-  });
+    {
+      getNextPageParam: (lastPage: { nextCursor: number | null }) =>
+        lastPage.nextCursor ?? undefined,
+      // benchmark.list items include presigned image URLs for linked media —
+      // same rationale as AssetLibrary: a long staleTime avoids re-signing every
+      // refetch.
+      staleTime: 30 * 60_000,
+    },
+  );
 
-  const items: BenchmarkItem[] = list.data?.items ?? [];
+  const items: BenchmarkItem[] =
+    list.data?.pages.flatMap((p: { items: BenchmarkItem[] }) => p.items) ?? [];
+  const total: number = list.data?.pages[0]?.total ?? items.length;
 
   return (
     <div className="space-y-3">
@@ -73,7 +85,7 @@ export function BenchmarkList() {
           ))}
         </Select>
         <div className="ml-auto flex items-center gap-2 text-sm text-[hsl(var(--muted-foreground))]">
-          共 {list.data?.total ?? items.length} 条
+          共 {total} 条
           <Button size="sm" onClick={() => setDrawerId('new')}>
             新建
           </Button>
@@ -130,6 +142,19 @@ export function BenchmarkList() {
           ) : null}
         </tbody>
       </table>
+
+      {list.hasNextPage ? (
+        <div className="flex justify-center pt-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => list.fetchNextPage()}
+            disabled={list.isFetchingNextPage}
+          >
+            {list.isFetchingNextPage ? '加载中…' : '加载更多'}
+          </Button>
+        </div>
+      ) : null}
 
       {drawerId !== null ? (
         <BenchmarkDrawer

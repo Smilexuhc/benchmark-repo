@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { cn } from '@/lib/utils';
 
 export type LazyImageProps = {
@@ -9,6 +9,13 @@ export type LazyImageProps = {
 
 export function LazyImage({ src, alt, className }: LazyImageProps) {
   const [errored, setErrored] = useState(false);
+
+  // Reset the error latch when src changes; otherwise a transient/expired-URL
+  // failure pins "无图" forever even after a refetch hands us a fresh URL.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: src is the trigger
+  useEffect(() => {
+    setErrored(false);
+  }, [src]);
 
   if (!src || errored) {
     return (

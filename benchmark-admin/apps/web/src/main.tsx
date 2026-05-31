@@ -1,14 +1,15 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClientProvider } from '@tanstack/react-query';
 import { RouterProvider, createRouter } from '@tanstack/react-router';
 import { NuqsAdapter } from 'nuqs/adapters/react';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
+import { createAppQueryClient } from './lib/query-client.js';
 import { trpc, trpcReactClient } from './lib/trpc.js';
 import './styles/tailwind.css';
 
 import { routeTree } from './routeTree.gen.js';
 
-const queryClient = new QueryClient();
+const queryClient = createAppQueryClient();
 
 const router = createRouter({ routeTree });
 

@@ -7,6 +7,7 @@ import { Drawer } from '@/components/ui/drawer';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { AiToolbar } from './shared/AiToolbar';
+import { Field } from './shared/Field';
 import { ImageGrid } from './shared/ImageGrid';
 import { useAssetDrawer } from './shared/useAssetDrawer';
 
@@ -47,14 +48,17 @@ export function PropDrawer({
   useEffect(() => {
     if (ctx.asset && ctx.asset.kind === 'prop') {
       const a = ctx.asset;
-      form.reset({
-        name: a.name,
-        era: a.era ?? '',
-        genre: a.genre ?? '',
-        category: a.data.category ?? '',
-        prompt: a.data.prompt ?? '',
-        description: a.data.description ?? '',
-      });
+      form.reset(
+        {
+          name: a.name,
+          era: a.era ?? '',
+          genre: a.genre ?? '',
+          category: a.data.category ?? '',
+          prompt: a.data.prompt ?? '',
+          description: a.data.description ?? '',
+        },
+        { keepDirtyValues: true },
+      );
     }
   }, [ctx.asset, form]);
 
@@ -201,26 +205,3 @@ export function PropDrawer({
   );
 }
 
-function Field({
-  label,
-  required,
-  error,
-  children,
-}: {
-  label: string;
-  required?: boolean;
-  error?: string | undefined;
-  children: React.ReactNode;
-}) {
-  return (
-    // biome-ignore lint/a11y/noLabelWithoutControl: wraps an Input child component which biome can't detect
-    <label className="block space-y-1.5 text-sm">
-      <span className="font-medium">
-        {label}
-        {required ? <span aria-hidden> *</span> : null}
-      </span>
-      {children}
-      {error ? <span className="text-xs text-[hsl(var(--destructive))]">{error}</span> : null}
-    </label>
-  );
-}

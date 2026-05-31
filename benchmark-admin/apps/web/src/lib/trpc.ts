@@ -23,10 +23,21 @@ export type RouterOutputs = inferRouterOutputs<AppRouter>;
 // x-trpc-source is required by protectedProcedure for CSRF defense-in-depth on mutations.
 const headers = () => ({ 'x-trpc-source': 'web' });
 
+// `credentials: 'include'` is required for the cross-origin China-host deploy
+// posture (U21) — without it the session cookie isn't sent to the API origin.
+// Harmless on same-origin dev. The cast is needed because tRPC's `FetchEsque`
+// types `signal?: AbortSignal | undefined` while the global `RequestInit`
+// types it as `AbortSignal | null`, which collides under
+// `exactOptionalPropertyTypes`.
+// biome-ignore lint/suspicious/noExplicitAny: tRPC FetchEsque vs global RequestInit
+const fetchWithCreds: any = (input: RequestInfo | URL, init?: RequestInit) =>
+  fetch(input, { ...init, credentials: 'include' });
+
 const reactLink = httpBatchLink({
   url: '/api/trpc',
   transformer: superjson,
   headers,
+  fetch: fetchWithCreds,
 });
 
 // Vanilla client used outside React (Zustand actions). splitLink routes
@@ -34,8 +45,17 @@ const reactLink = httpBatchLink({
 const vanillaLinks = [
   splitLink({
     condition: (op) => op.type === 'subscription',
-    true: httpSubscriptionLink({ url: '/api/trpc', transformer: superjson }),
-    false: httpBatchLink({ url: '/api/trpc', transformer: superjson, headers }),
+    true: httpSubscriptionLink({
+      url: '/api/trpc',
+      transformer: superjson,
+      eventSourceOptions: { withCredentials: true },
+    }),
+    false: httpBatchLink({
+      url: '/api/trpc',
+      transformer: superjson,
+      headers,
+      fetch: fetchWithCreds,
+    }),
   }),
 ];
 

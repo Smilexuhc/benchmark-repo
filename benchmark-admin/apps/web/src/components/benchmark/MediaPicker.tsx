@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { LazyImage } from '@/components/asset-library/LazyImage';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -29,17 +29,36 @@ export function MediaPicker({
 }: MediaPickerProps) {
   const [open, setOpen] = useState(false);
 
-  const list = trpc.mediaAssets.list.useQuery(
+  const list = trpc.mediaAssets.list.useInfiniteQuery(
     {
       mediaType,
       ...(assetKind ? { kind: assetKind } : {}),
       dedup: false,
     },
-    { enabled: open },
+    {
+      enabled: open,
+      getNextPageParam: (lastPage: { nextCursor: number | null }) =>
+        lastPage.nextCursor ?? undefined,
+      staleTime: 30 * 60_000,
+    },
   );
 
-  const items: MediaItem[] = list.data?.items ?? [];
+  const items: MediaItem[] =
+    list.data?.pages.flatMap((p: { items: MediaItem[] }) => p.items) ?? [];
   const selected = items.filter((i: MediaItem) => selectedIds.includes(i.id));
+
+  // Reconcile after the drawer opens and the list has loaded — if a previously
+  // selected id is no longer present (deleted out-of-band elsewhere), drop it
+  // from the picker's selection so we don't keep submitting a stale id.
+  // onChange is intentionally omitted from deps: parents inline a fresh closure
+  // each render, so depending on it would re-fire the effect and loop.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: see note above
+  useEffect(() => {
+    if (!open || list.isPending || items.length === 0) return;
+    const known = new Set(items.map((i: MediaItem) => i.id));
+    const surviving = selectedIds.filter((id) => known.has(id));
+    if (surviving.length !== selectedIds.length) onChange(surviving);
+  }, [open, list.isPending, items, selectedIds]);
 
   function toggle(id: number) {
     if (multi) {
@@ -112,6 +131,19 @@ export function MediaPicker({
               })}
             </div>
           )}
+          {list.hasNextPage ? (
+            <div className="mt-3 flex justify-center">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => list.fetchNextPage()}
+                disabled={list.isFetchingNextPage}
+              >
+                {list.isFetchingNextPage ? '加载中…' : '加载更多'}
+              </Button>
+            </div>
+          ) : null}
           <footer className="mt-4 flex justify-end gap-2">
             <Button type="button" variant="outline" onClick={() => setOpen(false)}>
               完成
