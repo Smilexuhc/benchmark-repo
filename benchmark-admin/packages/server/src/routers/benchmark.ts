@@ -137,97 +137,22 @@ async function fetchItemWithMedia(id: number) {
   return { ...item, media, comments };
 }
 
-// Batch fetch for list queries — eliminates N+1 round-trips per page
-async function fetchPageItems(ids: number[]) {
+// List rows render only scalar columns (id, shotType, questionType, scene,
+// score, needsRevision); media + comments are unused on the table view, so
+// shipping them inflates payload, serialization, and per-page presigned-URL
+// signing. Detail fetches still call `fetchItemWithMedia` and return the full
+// shape.
+async function fetchPageItemsBare(ids: number[]) {
   if (ids.length === 0) return [];
 
-  const [itemRows, links, comments] = await Promise.all([
-    db.select().from(videoBenchmarkItems).where(inArray(videoBenchmarkItems.id, ids)),
-    db
-      .select()
-      .from(videoBenchmarkMediaLinks)
-      .where(inArray(videoBenchmarkMediaLinks.itemId, ids))
-      .orderBy(videoBenchmarkMediaLinks.sortOrder),
-    db
-      .select()
-      .from(benchmarkItemComments)
-      .where(inArray(benchmarkItemComments.itemId, ids))
-      .orderBy(benchmarkItemComments.createdAt),
-  ]);
-
-  // Batch load asset images for all media links
-  const mediaIds = [...new Set(links.map((l) => l.mediaId))];
-  const imgRows =
-    mediaIds.length > 0
-      ? await db.select().from(assetImages).where(inArray(assetImages.id, mediaIds))
-      : [];
-
-  // Generate presigned URLs in parallel, tolerating individual failures
-  const urlMap = new Map<number, string>();
-  await Promise.allSettled(
-    imgRows.map(async (img) => {
-      const url = await storage.getPresignedUrl(img.objectKey).catch(() => '');
-      urlMap.set(img.id, url);
-    }),
-  );
-
-  // Group links and comments by item
-  const linksByItem = new Map<number, typeof links>();
-  for (const link of links) {
-    const list = linksByItem.get(link.itemId) ?? [];
-    list.push(link);
-    linksByItem.set(link.itemId, list);
-  }
-
-  const commentsByItem = new Map<number, typeof comments>();
-  for (const comment of comments) {
-    const list = commentsByItem.get(comment.itemId) ?? [];
-    list.push(comment);
-    commentsByItem.set(comment.itemId, list);
-  }
+  const itemRows = await db
+    .select()
+    .from(videoBenchmarkItems)
+    .where(inArray(videoBenchmarkItems.id, ids));
 
   const itemMap = new Map(itemRows.map((i) => [i.id, i]));
-
   return ids
-    .map((id) => {
-      const item = itemMap.get(id);
-      if (!item) return null;
-
-      const media: MediaByRole = {
-        character_image: [],
-        scene_image: [],
-        prop_image: [],
-        audio_input: null,
-        video_input: null,
-        video_output: null,
-      };
-
-      for (const link of linksByItem.get(id) ?? []) {
-        const linkOut: MediaLinkOut = { ...link, url: urlMap.get(link.mediaId) ?? '' };
-        switch (link.role) {
-          case 'character_image':
-            media.character_image.push(linkOut);
-            break;
-          case 'scene_image':
-            media.scene_image.push(linkOut);
-            break;
-          case 'prop_image':
-            media.prop_image.push(linkOut);
-            break;
-          case 'audio_input':
-            media.audio_input = linkOut;
-            break;
-          case 'video_input':
-            media.video_input = linkOut;
-            break;
-          case 'video_output':
-            media.video_output = linkOut;
-            break;
-        }
-      }
-
-      return { ...item, media, comments: commentsByItem.get(id) ?? [] };
-    })
+    .map((id) => itemMap.get(id) ?? null)
     .filter((i): i is NonNullable<typeof i> => i !== null);
 }
 
@@ -312,7 +237,7 @@ export const benchmarkRouter = t.router({
       const pageIds = rows.slice(0, LIMIT).map((r) => r.id);
       const nextCursor = hasMore && pageIds.length > 0 ? (pageIds[pageIds.length - 1] ?? null) : null;
 
-      const items = await fetchPageItems(pageIds);
+      const items = await fetchPageItemsBare(pageIds);
 
       return {
         items,

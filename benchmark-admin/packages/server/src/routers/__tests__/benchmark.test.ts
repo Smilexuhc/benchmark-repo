@@ -289,4 +289,30 @@ describe('benchmarkRouter', () => {
       expect(nextCursor).toBeNull();
     });
   });
+
+  describe('list payload trimming', () => {
+    it('list omits media and comments; get still returns them', async () => {
+      const charImgId = await createImageAsset(
+        caller,
+        'images/list-trim-abc123def456789012345678901234.png',
+      );
+
+      const item = await caller.benchmark.create({
+        shotType: 'trim',
+        questionType: 'check',
+        media: { ...emptyMedia, characterImageIds: [charImgId] },
+      });
+      await caller.benchmark.comments.add({ itemId: item.id, body: 'a comment' });
+
+      const { items } = await caller.benchmark.list({ filters: { shotType: 'trim' } });
+      const listed = items.find((i: { id: number }) => i.id === item.id);
+      expect(listed).toBeDefined();
+      expect((listed as Record<string, unknown>).media).toBeUndefined();
+      expect((listed as Record<string, unknown>).comments).toBeUndefined();
+
+      const fetched = await caller.benchmark.get({ id: item.id });
+      expect(fetched.media.character_image.length).toBe(1);
+      expect(fetched.comments.length).toBe(1);
+    });
+  });
 });

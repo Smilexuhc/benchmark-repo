@@ -1,5 +1,6 @@
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { parseAsString, useQueryStates } from 'nuqs';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useDebounce } from 'use-debounce';
 import {
   QUESTION_TYPES,
@@ -13,6 +14,12 @@ import { type RouterOutputs, trpc } from '@/lib/trpc';
 
 type BenchmarkItem = RouterOutputs['benchmark']['list']['items'][number];
 import { BenchmarkDrawer } from './BenchmarkDrawer';
+
+const ROW_HEIGHT = 41;
+const SCROLL_AREA_HEIGHT = 'calc(100vh - 240px)';
+const NEAR_BOTTOM_PX = 240;
+
+type VRow = { key: string | number; index: number; start: number };
 
 const PARSERS = {
   search: parseAsString.withDefault(''),
@@ -46,6 +53,29 @@ export function BenchmarkList() {
   const items: BenchmarkItem[] =
     list.data?.pages.flatMap((p: { items: BenchmarkItem[] }) => p.items) ?? [];
   const total: number = list.data?.pages[0]?.total ?? items.length;
+
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const rowVirtualizer = useVirtualizer<HTMLDivElement, HTMLDivElement>({
+    count: items.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => ROW_HEIGHT,
+    overscan: 8,
+  });
+
+  // Auto-load the next page as the user nears the bottom — keeps the existing
+  // "加载更多" button as a fallback for keyboard-only / no-scroll cases.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || !list.hasNextPage) return;
+    function onScroll() {
+      if (!el || list.isFetchingNextPage || !list.hasNextPage) return;
+      if (el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_BOTTOM_PX) {
+        list.fetchNextPage();
+      }
+    }
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => el.removeEventListener('scroll', onScroll);
+  }, [list.hasNextPage, list.isFetchingNextPage, list.fetchNextPage]);
 
   return (
     <div className="space-y-3">
@@ -98,63 +128,74 @@ export function BenchmarkList() {
         </p>
       ) : null}
 
-      <table className="w-full border-collapse text-sm">
-        <thead className="text-left text-xs text-[hsl(var(--muted-foreground))]">
-          <tr className="border-b border-[hsl(var(--border))]">
-            <th className="py-2 pr-2">ID</th>
-            <th className="py-2 pr-2">镜头</th>
-            <th className="py-2 pr-2">题型</th>
-            <th className="py-2 pr-2">场景</th>
-            <th className="py-2 pr-2">评分</th>
-            <th className="py-2 pr-2" />
-          </tr>
-        </thead>
-        <tbody>
-          {items.map((item: BenchmarkItem) => (
-            <tr key={item.id} className="border-b border-[hsl(var(--border))] hover:bg-[hsl(var(--muted))]">
-              <td className="py-2 pr-2 text-[hsl(var(--muted-foreground))]">#{item.id}</td>
-              <td className="py-2 pr-2">{item.shotType || '—'}</td>
-              <td className="py-2 pr-2">{item.questionType || '—'}</td>
-              <td className="py-2 pr-2 truncate">{item.scene || '—'}</td>
-              <td className="py-2 pr-2">
-                {item.score === null ? (
-                  <Badge variant="outline">未评</Badge>
-                ) : (
-                  <Badge>{item.score}</Badge>
-                )}
-                {item.needsRevision ? (
-                  <Badge variant="destructive" className="ml-1">需返工</Badge>
-                ) : null}
-              </td>
-              <td className="py-2 pr-2 text-right">
-                <Button size="sm" variant="outline" onClick={() => setDrawerId(item.id)}>
-                  编辑
-                </Button>
-              </td>
-            </tr>
-          ))}
-          {items.length === 0 && !list.isPending ? (
-            <tr>
-              <td colSpan={6} className="py-8 text-center text-sm text-[hsl(var(--muted-foreground))]">
-                暂无结果
-              </td>
-            </tr>
-          ) : null}
-        </tbody>
-      </table>
+      {/* Sticky header sits above the virtualized body; the body owns the
+          scroll so only visible rows are mounted. */}
+      <div className="grid grid-cols-[80px_1fr_1fr_2fr_140px_80px] gap-2 border-b border-[hsl(var(--border))] py-2 text-left text-xs text-[hsl(var(--muted-foreground))]">
+        <div>ID</div>
+        <div>镜头</div>
+        <div>题型</div>
+        <div>场景</div>
+        <div>评分</div>
+        <div />
+      </div>
 
-      {list.hasNextPage ? (
-        <div className="flex justify-center pt-2">
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => list.fetchNextPage()}
-            disabled={list.isFetchingNextPage}
+      {items.length === 0 && !list.isPending ? (
+        <div className="py-8 text-center text-sm text-[hsl(var(--muted-foreground))]">暂无结果</div>
+      ) : (
+        <div ref={scrollRef} className="overflow-auto" style={{ height: SCROLL_AREA_HEIGHT }}>
+          <div
+            className="relative w-full"
+            style={{ height: `${rowVirtualizer.getTotalSize()}px` }}
           >
-            {list.isFetchingNextPage ? '加载中…' : '加载更多'}
-          </Button>
+            {rowVirtualizer.getVirtualItems().map((virtualRow: VRow) => {
+              const item = items[virtualRow.index];
+              if (!item) return null;
+              return (
+                <div
+                  key={item.id}
+                  className="absolute left-0 right-0 grid grid-cols-[80px_1fr_1fr_2fr_140px_80px] items-center gap-2 border-b border-[hsl(var(--border))] py-2 text-sm hover:bg-[hsl(var(--muted))]"
+                  style={{
+                    transform: `translateY(${virtualRow.start}px)`,
+                    height: `${ROW_HEIGHT}px`,
+                  }}
+                >
+                  <div className="text-[hsl(var(--muted-foreground))]">#{item.id}</div>
+                  <div className="truncate">{item.shotType || '—'}</div>
+                  <div className="truncate">{item.questionType || '—'}</div>
+                  <div className="truncate">{item.scene || '—'}</div>
+                  <div className="flex items-center gap-1">
+                    {item.score === null ? (
+                      <Badge variant="outline">未评</Badge>
+                    ) : (
+                      <Badge>{item.score}</Badge>
+                    )}
+                    {item.needsRevision ? (
+                      <Badge variant="destructive">需返工</Badge>
+                    ) : null}
+                  </div>
+                  <div className="text-right">
+                    <Button size="sm" variant="outline" onClick={() => setDrawerId(item.id)}>
+                      编辑
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {list.hasNextPage ? (
+            <div className="flex justify-center py-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => list.fetchNextPage()}
+                disabled={list.isFetchingNextPage}
+              >
+                {list.isFetchingNextPage ? '加载中…' : '加载更多'}
+              </Button>
+            </div>
+          ) : null}
         </div>
-      ) : null}
+      )}
 
       {drawerId !== null ? (
         <BenchmarkDrawer

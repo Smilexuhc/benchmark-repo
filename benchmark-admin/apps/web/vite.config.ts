@@ -5,7 +5,14 @@ import { defineConfig } from 'vite';
 import tsconfigPaths from 'vite-tsconfig-paths';
 
 export default defineConfig({
-  plugins: [TanStackRouterVite(), react(), tailwindcss(), tsconfigPaths()],
+  plugins: [
+    // autoCodeSplitting: each route's component lands in its own chunk so the
+    // initial bundle doesn't ship every page up front.
+    TanStackRouterVite({ autoCodeSplitting: true }),
+    react(),
+    tailwindcss(),
+    tsconfigPaths(),
+  ],
   server: {
     proxy: {
       '/api': {

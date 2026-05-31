@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
+import { useEffect, useRef, useState } from 'react';
 import { LazyImage } from '@/components/asset-library/LazyImage';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -6,6 +7,13 @@ import { Drawer } from '@/components/ui/drawer';
 import { type RouterOutputs, trpc } from '@/lib/trpc';
 
 type MediaItem = RouterOutputs['mediaAssets']['list']['items'][number];
+
+const PICKER_COLS = 3;
+const PICKER_ROW_PX = 160;
+const PICKER_SCROLL_HEIGHT = 'calc(100vh - 260px)';
+const PICKER_NEAR_BOTTOM_PX = 320;
+
+type VRow = { key: string | number; index: number; start: number };
 
 export type MediaKind = 'image' | 'audio' | 'video';
 type AssetKind = 'character' | 'scene' | 'prop';
@@ -110,15 +118,89 @@ export function MediaPicker({
           ) : items.length === 0 ? (
             <p className="text-sm text-[hsl(var(--muted-foreground))]">没有可用的 {mediaType} 媒体。</p>
           ) : (
-            <div className="grid grid-cols-3 gap-2">
-              {items.map((it: MediaItem) => {
+            <VirtualizedMediaGrid
+              items={items}
+              selectedIds={selectedIds}
+              onToggle={toggle}
+              hasNextPage={list.hasNextPage ?? false}
+              isFetchingNextPage={list.isFetchingNextPage}
+              fetchNextPage={list.fetchNextPage}
+            />
+          )}
+          <footer className="mt-4 flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+              完成
+            </Button>
+          </footer>
+        </Drawer>
+      ) : null}
+    </div>
+  );
+}
+
+type VirtualizedMediaGridProps = {
+  items: MediaItem[];
+  selectedIds: number[];
+  onToggle: (id: number) => void;
+  hasNextPage: boolean;
+  isFetchingNextPage: boolean;
+  fetchNextPage: () => unknown;
+};
+
+function VirtualizedMediaGrid({
+  items,
+  selectedIds,
+  onToggle,
+  hasNextPage,
+  isFetchingNextPage,
+  fetchNextPage,
+}: VirtualizedMediaGridProps) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const rowCount = Math.ceil(items.length / PICKER_COLS);
+
+  const rowVirtualizer = useVirtualizer<HTMLDivElement, HTMLDivElement>({
+    count: rowCount,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => PICKER_ROW_PX,
+    overscan: 3,
+  });
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || !hasNextPage) return;
+    function onScroll() {
+      if (!el || isFetchingNextPage || !hasNextPage) return;
+      if (el.scrollHeight - el.scrollTop - el.clientHeight < PICKER_NEAR_BOTTOM_PX) {
+        fetchNextPage();
+      }
+    }
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => el.removeEventListener('scroll', onScroll);
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+
+  return (
+    <div ref={scrollRef} className="overflow-auto" style={{ height: PICKER_SCROLL_HEIGHT }}>
+      <div
+        className="relative w-full"
+        style={{ height: `${rowVirtualizer.getTotalSize()}px` }}
+      >
+        {rowVirtualizer.getVirtualItems().map((virtualRow: VRow) => {
+          const start = virtualRow.index * PICKER_COLS;
+          const rowItems = items.slice(start, start + PICKER_COLS);
+          return (
+            <div
+              key={virtualRow.key}
+              className="absolute left-0 right-0 grid grid-cols-3 gap-2"
+              style={{ transform: `translateY(${virtualRow.start}px)` }}
+            >
+              {rowItems.map((it) => {
                 const active = selectedIds.includes(it.id);
                 return (
                   <button
                     key={it.id}
                     type="button"
                     aria-pressed={active}
-                    onClick={() => toggle(it.id)}
+                    onClick={() => onToggle(it.id)}
                     className={`overflow-hidden rounded border text-left ${active ? 'border-[hsl(var(--primary))] ring-2 ring-[hsl(var(--ring))]' : 'border-[hsl(var(--border))]'}`}
                   >
                     <LazyImage src={it.url} alt={`media-${it.id}`} className="aspect-square w-full" />
@@ -130,26 +212,21 @@ export function MediaPicker({
                 );
               })}
             </div>
-          )}
-          {list.hasNextPage ? (
-            <div className="mt-3 flex justify-center">
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={() => list.fetchNextPage()}
-                disabled={list.isFetchingNextPage}
-              >
-                {list.isFetchingNextPage ? '加载中…' : '加载更多'}
-              </Button>
-            </div>
-          ) : null}
-          <footer className="mt-4 flex justify-end gap-2">
-            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
-              完成
-            </Button>
-          </footer>
-        </Drawer>
+          );
+        })}
+      </div>
+      {hasNextPage ? (
+        <div className="mt-3 flex justify-center pb-2">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => fetchNextPage()}
+            disabled={isFetchingNextPage}
+          >
+            {isFetchingNextPage ? '加载中…' : '加载更多'}
+          </Button>
+        </div>
       ) : null}
     </div>
   );
