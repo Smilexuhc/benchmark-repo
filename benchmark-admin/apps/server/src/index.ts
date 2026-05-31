@@ -14,6 +14,15 @@ import fastify from 'fastify';
 
 const server = fastify({ logger: true });
 
+// ── Error handler — prevents driver/internal errors from leaking to clients ───
+
+server.setErrorHandler((err: Error & { statusCode?: number }, _request, reply) => {
+  server.log.error(err);
+  const status = err.statusCode ?? 500;
+  const message = status < 500 ? err.message : 'Internal server error';
+  reply.status(status).send({ error: message });
+});
+
 await server.register(cors, {
   origin: process.env.WEB_URL ?? 'http://localhost:5173',
   credentials: true,
@@ -41,10 +50,10 @@ server.get('/health', async (_request, reply) => {
     db.execute(sql`SELECT 1`).then(() => true).catch(() => false),
     storage.healthCheck(),
   ]);
-  const aiOk = Boolean(env.OPENROUTER_API_KEY);
-  const ok = dbOk && tosOk && aiOk;
+  const ai_configured = Boolean(env.OPENROUTER_API_KEY);
+  const ok = dbOk && tosOk && ai_configured;
   reply.status(ok ? 200 : 503);
-  return { ok, db: dbOk, tos: tosOk, ai: aiOk };
+  return { ok, db: dbOk, tos: tosOk, ai_configured };
 });
 
 // ── Auth routes ───────────────────────────────────────────────────────────────
@@ -95,6 +104,49 @@ server.post(
 
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024; // 50 MB
 
+// Allowlisted extensions and their server-authoritative content types
+const EXT_TO_CONTENT_TYPE: Record<string, string> = {
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  webp: 'image/webp',
+  mp3: 'audio/mpeg',
+  wav: 'audio/wav',
+  m4a: 'audio/mp4',
+  mp4: 'video/mp4',
+  mov: 'video/quicktime',
+  webm: 'video/webm',
+};
+
+// Magic-byte signatures for quick type validation
+const MAGIC_BYTES: { sig: number[]; type: 'image' | 'audio' | 'video' }[] = [
+  { sig: [0x89, 0x50, 0x4e, 0x47], type: 'image' }, // PNG
+  { sig: [0xff, 0xd8, 0xff], type: 'image' }, // JPEG
+  { sig: [0x52, 0x49, 0x46, 0x46], type: 'image' }, // WebP (RIFF container)
+  { sig: [0x49, 0x44, 0x33], type: 'audio' }, // MP3 (ID3)
+  { sig: [0xff, 0xfb], type: 'audio' }, // MP3 frame
+  { sig: [0xff, 0xf3], type: 'audio' }, // MP3 frame
+  { sig: [0x52, 0x49, 0x46, 0x46], type: 'audio' }, // WAV (RIFF)
+  { sig: [0x66, 0x74, 0x79, 0x70], type: 'video' }, // MP4/MOV (ftyp box at offset 4)
+  { sig: [0x1a, 0x45, 0xdf, 0xa3], type: 'video' }, // WebM (EBML)
+];
+
+function detectMimeFromBytes(bytes: Buffer): string | null {
+  for (const { sig, type } of MAGIC_BYTES) {
+    // MP4/MOV ftyp box is at offset 4
+    const offset = sig[0] === 0x66 ? 4 : 0;
+    if (bytes.length >= offset + sig.length) {
+      const match = sig.every((b, i) => bytes[offset + i] === b);
+      if (match) {
+        if (type === 'image') return 'image';
+        if (type === 'audio') return 'audio';
+        return 'video';
+      }
+    }
+  }
+  return null;
+}
+
 server.post('/api/upload', { preHandler: requireSession }, async (request, reply) => {
   const contentLength = request.headers['content-length'];
   if (contentLength && Number(contentLength) > MAX_UPLOAD_BYTES) {
@@ -116,19 +168,33 @@ server.post('/api/upload', { preHandler: requireSession }, async (request, reply
 
   const bytes = Buffer.concat(chunks);
   const rawExt = (data.filename.split('.').pop() ?? 'bin').toLowerCase();
+
+  // Validate extension is in allowlist
+  const serverContentType = EXT_TO_CONTENT_TYPE[rawExt];
+  if (!serverContentType) {
+    return reply.status(400).send({ error: 'Unsupported file type' });
+  }
+
+  // Validate magic bytes to prevent extension spoofing
+  const detectedType = detectMimeFromBytes(bytes);
+  const expectedType = serverContentType.split('/')[0] as 'image' | 'audio' | 'video';
+  if (detectedType !== null && detectedType !== expectedType) {
+    return reply.status(400).send({ error: 'File content does not match extension' });
+  }
+
   const prefix: 'images' | 'audios' | 'videos' =
-    rawExt === 'png' || rawExt === 'jpg' || rawExt === 'jpeg' || rawExt === 'webp'
-      ? 'images'
-      : rawExt === 'mp3' || rawExt === 'wav' || rawExt === 'm4a'
-        ? 'audios'
-        : 'videos';
+    expectedType === 'image' ? 'images' : expectedType === 'audio' ? 'audios' : 'videos';
 
   const objectKey = storage.newObjectKey(`.${rawExt}`, prefix);
-  await storage.putObject(objectKey, bytes, data.mimetype);
+  // Use server-authoritative content type — never trust client-supplied mimetype
+  await storage.putObject(objectKey, bytes, serverContentType);
   return reply.send({ objectKey });
 });
 
 // ── Export ZIP ────────────────────────────────────────────────────────────────
+
+// Valid export kinds — validated to prevent Content-Disposition header injection
+const VALID_EXPORT_KINDS = new Set(['benchmark']);
 
 server.get<{ Params: { kind: string } }>(
   '/api/export/:kind.zip',
@@ -136,6 +202,11 @@ server.get<{ Params: { kind: string } }>(
   async (request, reply) => {
     const { kind } = request.params;
 
+    if (!VALID_EXPORT_KINDS.has(kind)) {
+      return reply.status(400).send({ error: 'Invalid export kind' });
+    }
+
+    // kind is now validated against the enum — safe to use in header
     reply.header('Content-Type', 'application/zip');
     reply.header('Content-Disposition', `attachment; filename="${kind}.zip"`);
 
@@ -147,6 +218,8 @@ server.get<{ Params: { kind: string } }>(
 
     const itemIds = items.map((i) => i.id);
 
+    // Include any image-type media link (not just character_image) so items with
+    // only scene/prop images still get an image in the export
     const imageLinks =
       itemIds.length > 0
         ? await db
@@ -157,13 +230,41 @@ server.get<{ Params: { kind: string } }>(
             })
             .from(videoBenchmarkMediaLinks)
             .innerJoin(assetImages, eq(videoBenchmarkMediaLinks.mediaId, assetImages.id))
-            .where(eq(videoBenchmarkMediaLinks.role, 'character_image'))
+            .where(eq(assetImages.mediaType, 'image'))
         : [];
 
     // biome-ignore lint/suspicious/noExplicitAny: schema rows are plain objects
-    await buildExportZip(kind, items as any[], imageLinks, reply);
+    await buildExportZip(kind, items as any[], imageLinks, reply, request);
   },
 );
 
+// ── Graceful shutdown ─────────────────────────────────────────────────────────
+
+async function shutdown(signal: string) {
+  server.log.info({ signal }, 'Shutting down');
+  try {
+    await server.close();
+  } catch (err) {
+    server.log.error(err, 'Error during shutdown');
+    process.exit(1);
+  }
+  process.exit(0);
+}
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('unhandledRejection', (reason) => {
+  server.log.error({ reason }, 'Unhandled promise rejection');
+});
+process.on('uncaughtException', (err) => {
+  server.log.error(err, 'Uncaught exception');
+  process.exit(1);
+});
+
 const port = Number(process.env.PORT ?? 3000);
-await server.listen({ port, host: '0.0.0.0' });
+try {
+  await server.listen({ port, host: '0.0.0.0' });
+} catch (err) {
+  server.log.error(err, 'Failed to start server');
+  process.exit(1);
+}

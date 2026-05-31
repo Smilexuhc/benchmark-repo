@@ -17,6 +17,7 @@ const s3 = new S3Client({
     accessKeyId: env.TOS_ACCESS_KEY_ID,
     secretAccessKey: env.TOS_SECRET_ACCESS_KEY,
   },
+  maxAttempts: 3,
 });
 
 /**

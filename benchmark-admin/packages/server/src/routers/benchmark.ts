@@ -47,13 +47,18 @@ function buildLinkRows(
   },
 ): LinkRow[] {
   const rows: LinkRow[] = [];
-  bundle.characterImageIds.forEach((mediaId, i) => {
+  // Dedup each multi-cardinality array to avoid duplicate link inserts
+  const uniqueCharImgs = [...new Set(bundle.characterImageIds)];
+  const uniqueSceneImgs = [...new Set(bundle.sceneImageIds)];
+  const uniquePropImgs = [...new Set(bundle.propImageIds)];
+
+  uniqueCharImgs.forEach((mediaId, i) => {
     rows.push({ itemId, mediaId, role: 'character_image', sortOrder: i });
   });
-  bundle.sceneImageIds.forEach((mediaId, i) => {
+  uniqueSceneImgs.forEach((mediaId, i) => {
     rows.push({ itemId, mediaId, role: 'scene_image', sortOrder: i });
   });
-  bundle.propImageIds.forEach((mediaId, i) => {
+  uniquePropImgs.forEach((mediaId, i) => {
     rows.push({ itemId, mediaId, role: 'prop_image', sortOrder: i });
   });
   if (bundle.audioInputId !== null)
@@ -94,14 +99,16 @@ async function fetchItemWithMedia(id: number) {
     video_output: null,
   };
 
-  await Promise.all(
+  await Promise.allSettled(
     links.map(async (link) => {
       const [imgRow] = await db
         .select()
         .from(assetImages)
         .where(eq(assetImages.id, link.mediaId))
         .limit(1);
-      const url = imgRow ? await storage.getPresignedUrl(imgRow.objectKey) : '';
+      const url = imgRow
+        ? await storage.getPresignedUrl(imgRow.objectKey).catch(() => '')
+        : '';
       const linkOut: MediaLinkOut = { ...link, url };
 
       switch (link.role) {
@@ -128,6 +135,100 @@ async function fetchItemWithMedia(id: number) {
   );
 
   return { ...item, media, comments };
+}
+
+// Batch fetch for list queries — eliminates N+1 round-trips per page
+async function fetchPageItems(ids: number[]) {
+  if (ids.length === 0) return [];
+
+  const [itemRows, links, comments] = await Promise.all([
+    db.select().from(videoBenchmarkItems).where(inArray(videoBenchmarkItems.id, ids)),
+    db
+      .select()
+      .from(videoBenchmarkMediaLinks)
+      .where(inArray(videoBenchmarkMediaLinks.itemId, ids))
+      .orderBy(videoBenchmarkMediaLinks.sortOrder),
+    db
+      .select()
+      .from(benchmarkItemComments)
+      .where(inArray(benchmarkItemComments.itemId, ids))
+      .orderBy(benchmarkItemComments.createdAt),
+  ]);
+
+  // Batch load asset images for all media links
+  const mediaIds = [...new Set(links.map((l) => l.mediaId))];
+  const imgRows =
+    mediaIds.length > 0
+      ? await db.select().from(assetImages).where(inArray(assetImages.id, mediaIds))
+      : [];
+
+  // Generate presigned URLs in parallel, tolerating individual failures
+  const urlMap = new Map<number, string>();
+  await Promise.allSettled(
+    imgRows.map(async (img) => {
+      const url = await storage.getPresignedUrl(img.objectKey).catch(() => '');
+      urlMap.set(img.id, url);
+    }),
+  );
+
+  // Group links and comments by item
+  const linksByItem = new Map<number, typeof links>();
+  for (const link of links) {
+    const list = linksByItem.get(link.itemId) ?? [];
+    list.push(link);
+    linksByItem.set(link.itemId, list);
+  }
+
+  const commentsByItem = new Map<number, typeof comments>();
+  for (const comment of comments) {
+    const list = commentsByItem.get(comment.itemId) ?? [];
+    list.push(comment);
+    commentsByItem.set(comment.itemId, list);
+  }
+
+  const itemMap = new Map(itemRows.map((i) => [i.id, i]));
+
+  return ids
+    .map((id) => {
+      const item = itemMap.get(id);
+      if (!item) return null;
+
+      const media: MediaByRole = {
+        character_image: [],
+        scene_image: [],
+        prop_image: [],
+        audio_input: null,
+        video_input: null,
+        video_output: null,
+      };
+
+      for (const link of linksByItem.get(id) ?? []) {
+        const linkOut: MediaLinkOut = { ...link, url: urlMap.get(link.mediaId) ?? '' };
+        switch (link.role) {
+          case 'character_image':
+            media.character_image.push(linkOut);
+            break;
+          case 'scene_image':
+            media.scene_image.push(linkOut);
+            break;
+          case 'prop_image':
+            media.prop_image.push(linkOut);
+            break;
+          case 'audio_input':
+            media.audio_input = linkOut;
+            break;
+          case 'video_input':
+            media.video_input = linkOut;
+            break;
+          case 'video_output':
+            media.video_output = linkOut;
+            break;
+        }
+      }
+
+      return { ...item, media, comments: commentsByItem.get(id) ?? [] };
+    })
+    .filter((i): i is NonNullable<typeof i> => i !== null);
 }
 
 // Scalar fields accepted by create/update
@@ -163,46 +264,47 @@ export const benchmarkRouter = t.router({
     )
     .query(async ({ input }) => {
       const LIMIT = 20;
-      const conditions: SQL[] = [];
 
+      // Build shared filter predicates (no cursor — used for both count and page query)
+      const baseConditions: SQL[] = [];
       if (input.deletedOnly) {
-        conditions.push(isNotNull(videoBenchmarkItems.deletedAt));
+        baseConditions.push(isNotNull(videoBenchmarkItems.deletedAt));
       } else {
-        conditions.push(isNull(videoBenchmarkItems.deletedAt));
+        baseConditions.push(isNull(videoBenchmarkItems.deletedAt));
       }
-
-      if (input.cursor) {
-        conditions.push(lt(videoBenchmarkItems.id, input.cursor));
-      }
-
       if (input.search?.trim()) {
         const term = `%${input.search.trim()}%`;
-        conditions.push(
+        baseConditions.push(
           sql`(${videoBenchmarkItems.textPrompt} ILIKE ${term} OR ${videoBenchmarkItems.scene} ILIKE ${term})`,
         );
       }
-
       if (input.filters?.shotType) {
-        conditions.push(eq(videoBenchmarkItems.shotType, input.filters.shotType));
+        baseConditions.push(eq(videoBenchmarkItems.shotType, input.filters.shotType));
       }
       if (input.filters?.questionType) {
-        conditions.push(eq(videoBenchmarkItems.questionType, input.filters.questionType));
+        baseConditions.push(eq(videoBenchmarkItems.questionType, input.filters.questionType));
       }
 
-      const where = conditions.length > 0 ? and(...conditions) : undefined;
+      const baseWhere = baseConditions.length > 0 ? and(...baseConditions) : undefined;
 
+      // Count uses the same predicates as the page query (minus cursor)
       const totalRow = await db
         .select({ total: sql<number>`count(*)::int` })
         .from(videoBenchmarkItems)
-        .where(
-          input.deletedOnly ? isNotNull(videoBenchmarkItems.deletedAt) : isNull(videoBenchmarkItems.deletedAt),
-        );
+        .where(baseWhere);
       const total = totalRow[0]?.total ?? 0;
+
+      // Page query adds cursor on top of base conditions
+      const pageConditions = [...baseConditions];
+      if (input.cursor) {
+        pageConditions.push(lt(videoBenchmarkItems.id, input.cursor));
+      }
+      const pageWhere = pageConditions.length > 0 ? and(...pageConditions) : undefined;
 
       const rows = await db
         .select({ id: videoBenchmarkItems.id })
         .from(videoBenchmarkItems)
-        .where(where)
+        .where(pageWhere)
         .orderBy(desc(videoBenchmarkItems.id))
         .limit(LIMIT + 1);
 
@@ -210,11 +312,11 @@ export const benchmarkRouter = t.router({
       const pageIds = rows.slice(0, LIMIT).map((r) => r.id);
       const nextCursor = hasMore && pageIds.length > 0 ? (pageIds[pageIds.length - 1] ?? null) : null;
 
-      const items = await Promise.all(pageIds.map(fetchItemWithMedia));
+      const items = await fetchPageItems(pageIds);
 
       return {
-        items: items.filter((i): i is NonNullable<typeof i> => i !== null),
-        total: total ?? 0,
+        items,
+        total,
         nextCursor,
       };
     }),

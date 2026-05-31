@@ -221,7 +221,12 @@ export const assetsRouter = t.router({
     .input(
       z.object({
         id: z.number().int().positive(),
-        objectKey: z.string().min(1),
+        objectKey: z
+          .string()
+          .regex(
+            /^(images|audios|videos)\/[a-zA-Z0-9][a-zA-Z0-9._-]*\.[a-zA-Z0-9]+$/,
+            'objectKey must match system prefix pattern',
+          ),
         source: z.string().default('uploaded'),
       }),
     )
@@ -250,8 +255,12 @@ export const assetsRouter = t.router({
       const [deleted] = await db
         .delete(assetImages)
         .where(eq(assetImages.id, input.imageId))
-        .returning({ imageId: assetImages.id });
+        .returning({ imageId: assetImages.id, objectKey: assetImages.objectKey });
       if (!deleted) throw new TRPCError({ code: 'NOT_FOUND' });
+      // Best-effort TOS cleanup — log on failure but do not fail the request
+      storage.deleteObject(deleted.objectKey).catch((err) =>
+        console.warn('TOS deleteObject failed for', deleted.objectKey, err),
+      );
       return { imageId: deleted.imageId };
     }),
 

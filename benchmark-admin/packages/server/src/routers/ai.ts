@@ -7,6 +7,7 @@ import {
   GenerateImageInput,
   GeneratePromptInput,
 } from '@benchmark-admin/shared/schemas/prompts';
+import type { CharacterData, PropData, SceneData } from '@benchmark-admin/shared/schemas/assets';
 import { db } from '../db/index.js';
 import * as ai from '../services/ai/index.js';
 import * as storage from '../services/storage/index.js';
@@ -25,10 +26,9 @@ export const aiRouter = t.router({
     .input(ExtractFieldsInput)
     .mutation(async ({ input }) => {
       const data = await ai.extractFields(input.kind, input.description, input.options);
-      return { kind: input.kind, data } as
-        | { kind: 'character'; data: typeof data }
-        | { kind: 'scene'; data: typeof data }
-        | { kind: 'prop'; data: typeof data };
+      if (input.kind === 'character') return { kind: 'character' as const, data: data as CharacterData };
+      if (input.kind === 'scene') return { kind: 'scene' as const, data: data as SceneData };
+      return { kind: 'prop' as const, data: data as PropData };
     }),
 
   generateImage: protectedProcedure
@@ -55,11 +55,22 @@ export const aiRouter = t.router({
 
       const { objectKey } = await ai.generateImage(input.prompt, refBytes, input.aspectRatio);
 
-      const [img] = await db
-        .insert(assetImages)
-        .values({ assetId: input.id, objectKey, source: 'generated', mediaType: 'image' })
-        .returning();
-      if (!img) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      let img: typeof assetImages.$inferSelect | undefined;
+      try {
+        const rows = await db
+          .insert(assetImages)
+          .values({ assetId: input.id, objectKey, source: 'generated', mediaType: 'image' })
+          .returning();
+        img = rows[0];
+      } catch (err) {
+        // DB insert failed — best-effort clean up the already-uploaded TOS object
+        storage.deleteObject(objectKey).catch(() => {});
+        throw err;
+      }
+      if (!img) {
+        storage.deleteObject(objectKey).catch(() => {});
+        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      }
 
       const url = await storage.getPresignedUrl(objectKey);
       return { ...img, url };

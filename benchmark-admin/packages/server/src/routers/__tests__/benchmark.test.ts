@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.hoisted(() => {
   process.env.DATABASE_URL = 'postgresql://user:pass@host/db';
@@ -49,22 +49,40 @@ async function createImageAsset(
   return img.id;
 }
 
+const emptyMedia = {
+  characterImageIds: [],
+  sceneImageIds: [],
+  propImageIds: [],
+  audioInputId: null,
+  videoInputId: null,
+  videoOutputId: null,
+};
+
 describe('benchmarkRouter', () => {
   // biome-ignore lint/suspicious/noExplicitAny: test helper
   let caller: any;
+  // biome-ignore lint/suspicious/noExplicitAny: test db
+  let testDb: any;
 
   beforeAll(async () => {
+    const { getTestDb } = await import('../../db/__tests__/pglite.js');
+    testDb = await getTestDb();
     const { appRouter } = await import('../../trpc/index.js');
     caller = appRouter.createCaller(CTX);
   });
 
+  beforeEach(async () => {
+    const { resetTestDb } = await import('../../db/__tests__/pglite.js');
+    await resetTestDb();
+  });
+
   describe('create with media bundle → get', () => {
     it('creates item with mixed media and all links are present grouped by role', async () => {
-      const charImgId1 = await createImageAsset(caller, 'images/char1.png');
-      const charImgId2 = await createImageAsset(caller, 'images/char2.png');
-      const charImgId3 = await createImageAsset(caller, 'images/char3.png');
-      const sceneImgId = await createImageAsset(caller, 'images/scene.png');
-      const videoOutId = await createImageAsset(caller, 'videos/out.mp4');
+      const charImgId1 = await createImageAsset(caller, 'images/char1abc123def456789012345678901.png');
+      const charImgId2 = await createImageAsset(caller, 'images/char2abc123def456789012345678901.png');
+      const charImgId3 = await createImageAsset(caller, 'images/char3abc123def456789012345678901.png');
+      const sceneImgId = await createImageAsset(caller, 'images/sceneabc123def456789012345678901.png');
+      const videoOutId = await createImageAsset(caller, 'videos/outaabc123def456789012345678901.mp4');
 
       const item = await caller.benchmark.create({
         shotType: 'close-up',
@@ -92,37 +110,110 @@ describe('benchmarkRouter', () => {
     });
   });
 
-  describe('stats', () => {
-    it('returns group counts by shot_type × question_type and todayNew', async () => {
-      // Create 4 items: 2 groups of 2
-      for (let i = 0; i < 2; i++) {
-        await caller.benchmark.create({
-          shotType: 'wide',
-          questionType: 'qa',
-          media: { characterImageIds: [], sceneImageIds: [], propImageIds: [], audioInputId: null, videoInputId: null, videoOutputId: null },
-        });
+  describe('list total respects search/filters', () => {
+    it('total matches filtered item count, not overall count', async () => {
+      // Create items with two distinct shotTypes
+      for (let i = 0; i < 3; i++) {
+        await caller.benchmark.create({ shotType: 'wide', media: emptyMedia });
       }
       for (let i = 0; i < 2; i++) {
-        await caller.benchmark.create({
-          shotType: 'close',
-          questionType: 'score',
-          media: { characterImageIds: [], sceneImageIds: [], propImageIds: [], audioInputId: null, videoInputId: null, videoOutputId: null },
-        });
+        await caller.benchmark.create({ shotType: 'close', media: emptyMedia });
+      }
+
+      const wideResult = await caller.benchmark.list({ filters: { shotType: 'wide' } });
+      expect(wideResult.total).toBe(3);
+      expect(wideResult.items.length).toBe(3);
+
+      const closeResult = await caller.benchmark.list({ filters: { shotType: 'close' } });
+      expect(closeResult.total).toBe(2);
+
+      // Unfiltered total should be 5
+      const allResult = await caller.benchmark.list({});
+      expect(allResult.total).toBe(5);
+    });
+
+    it('total reflects search predicate', async () => {
+      await caller.benchmark.create({ textPrompt: 'unique-search-term-xyz', media: emptyMedia });
+      await caller.benchmark.create({ textPrompt: 'other prompt', media: emptyMedia });
+
+      const { total } = await caller.benchmark.list({ search: 'unique-search-term-xyz' });
+      expect(total).toBe(1);
+    });
+  });
+
+  describe('dedup in buildLinkRows', () => {
+    it('duplicate characterImageIds are deduplicated before insert', async () => {
+      const imgId = await createImageAsset(caller, 'images/dupabc123def456789012345678901234.png');
+
+      const item = await caller.benchmark.create({
+        media: {
+          characterImageIds: [imgId, imgId, imgId], // 3× same id
+          sceneImageIds: [],
+          propImageIds: [],
+          audioInputId: null,
+          videoInputId: null,
+          videoOutputId: null,
+        },
+      });
+
+      // Should have only 1 character_image, not 3
+      expect(item.media.character_image.length).toBe(1);
+    });
+  });
+
+  describe('RF-2 single-cardinality constraint', () => {
+    it('DB rejects a second audio_input for the same item (partial unique index)', async () => {
+      const imgId1 = await createImageAsset(caller, 'audios/a1abc123def456789012345678901234.mp3');
+      const imgId2 = await createImageAsset(caller, 'audios/a2abc123def456789012345678901234.mp3');
+
+      const item = await caller.benchmark.create({
+        media: { ...emptyMedia, audioInputId: imgId1 },
+      });
+
+      // Direct DB insert of a second audio_input should violate the partial unique index
+      const { videoBenchmarkMediaLinks } = await import('@benchmark-admin/shared/db/schema');
+      await expect(
+        testDb.insert(videoBenchmarkMediaLinks).values({
+          itemId: item.id,
+          mediaId: imgId2,
+          role: 'audio_input',
+          sortOrder: 0,
+        }),
+      ).rejects.toThrow();
+    });
+
+    it('DB allows multiple character_images for the same item', async () => {
+      const imgId1 = await createImageAsset(caller, 'images/c1abc123def456789012345678901234.png');
+      const imgId2 = await createImageAsset(caller, 'images/c2abc123def456789012345678901234.png');
+
+      const item = await caller.benchmark.create({
+        media: { ...emptyMedia, characterImageIds: [imgId1, imgId2] },
+      });
+
+      expect(item.media.character_image.length).toBe(2);
+    });
+  });
+
+  describe('stats', () => {
+    it('returns group counts by shot_type × question_type and todayNew', async () => {
+      for (let i = 0; i < 2; i++) {
+        await caller.benchmark.create({ shotType: 'wide', questionType: 'qa', media: emptyMedia });
+      }
+      for (let i = 0; i < 2; i++) {
+        await caller.benchmark.create({ shotType: 'close', questionType: 'score', media: emptyMedia });
       }
 
       const { groups, todayNew } = await caller.benchmark.stats();
 
       expect(groups.length).toBeGreaterThanOrEqual(2);
       expect(typeof todayNew).toBe('number');
-      expect(todayNew).toBeGreaterThanOrEqual(4); // at least the 4 we just created
+      expect(todayNew).toBeGreaterThanOrEqual(4);
     });
   });
 
   describe('comments', () => {
     it('add and list comments; delete removes comment', async () => {
-      const item = await caller.benchmark.create({
-        media: { characterImageIds: [], sceneImageIds: [], propImageIds: [], audioInputId: null, videoInputId: null, videoOutputId: null },
-      });
+      const item = await caller.benchmark.create({ media: emptyMedia });
 
       const comment = await caller.benchmark.comments.add({
         itemId: item.id,
@@ -142,39 +233,9 @@ describe('benchmarkRouter', () => {
     });
   });
 
-  describe('transaction rollback', () => {
-    it('item is not created if media link insert fails due to constraint violation', async () => {
-      const imgId = await createImageAsset(caller, 'images/dup.png');
-
-      // First create succeeds
-      await caller.benchmark.create({
-        shotType: 'tx-test',
-        media: {
-          characterImageIds: [],
-          sceneImageIds: [],
-          propImageIds: [],
-          audioInputId: imgId,
-          videoInputId: null,
-          videoOutputId: null,
-        },
-      });
-
-      // Get initial count of tx-test items
-      const { total: before } = await caller.benchmark.list({ filters: { shotType: 'tx-test' } });
-
-      // Simulate a bad create that would violate constraints — try to insert
-      // the same audioInputId twice to trigger the partial unique index.
-      // The Zod input validates single-cardinality, so we can't easily violate from the router.
-      // Instead, verify that the transaction pattern works for normal creates.
-      expect(before).toBeGreaterThanOrEqual(1);
-    });
-  });
-
   describe('soft-delete and restore', () => {
     it('delete hides item from default list; restore brings it back', async () => {
-      const item = await caller.benchmark.create({
-        media: { characterImageIds: [], sceneImageIds: [], propImageIds: [], audioInputId: null, videoInputId: null, videoOutputId: null },
-      });
+      const item = await caller.benchmark.create({ media: emptyMedia });
 
       await caller.benchmark.delete({ id: item.id });
 
@@ -188,6 +249,44 @@ describe('benchmarkRouter', () => {
 
       const { items: restored } = await caller.benchmark.list({});
       expect(restored.some((i: { id: number }) => i.id === item.id)).toBe(true);
+    });
+  });
+
+  describe('pagination', () => {
+    it('paginates correctly and total stays stable across pages', async () => {
+      // Create 25 items
+      for (let i = 0; i < 25; i++) {
+        await caller.benchmark.create({ shotType: 'page-test', media: emptyMedia });
+      }
+
+      const page1 = await caller.benchmark.list({ filters: { shotType: 'page-test' } });
+      expect(page1.items.length).toBe(20);
+      expect(page1.total).toBe(25);
+      expect(page1.nextCursor).toBeTypeOf('number');
+
+      const page2 = await caller.benchmark.list({
+        filters: { shotType: 'page-test' },
+        // biome-ignore lint/style/noNonNullAssertion: asserted toBeTypeOf('number') above
+        cursor: page1.nextCursor!,
+      });
+      expect(page2.items.length).toBe(5);
+      // Total remains the same regardless of cursor
+      expect(page2.total).toBe(25);
+
+      // No ID overlap between pages
+      const page1Ids = new Set(page1.items.map((i: { id: number }) => i.id));
+      for (const item of page2.items) {
+        expect(page1Ids.has(item.id)).toBe(false);
+      }
+    });
+
+    it('empty page returns total=0', async () => {
+      const { items, total, nextCursor } = await caller.benchmark.list({
+        filters: { shotType: 'no-such-type-xyz' },
+      });
+      expect(items.length).toBe(0);
+      expect(total).toBe(0);
+      expect(nextCursor).toBeNull();
     });
   });
 });

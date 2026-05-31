@@ -83,6 +83,7 @@ const AssetInsertBase = createInsertSchema(assets).omit({
   createdAt: true,
   updatedAt: true,
   deletedAt: true,
+  coverImageId: true, // set via setCover after images are attached
 });
 
 const CharacterInsert = AssetInsertBase.extend({
