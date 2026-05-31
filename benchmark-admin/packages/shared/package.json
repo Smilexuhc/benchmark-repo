@@ -3,19 +3,58 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts",
-    "./env": "./src/env.ts",
-    "./db/schema": "./src/db/schema.ts",
-    "./schemas/assets": "./src/schemas/assets.ts",
-    "./schemas/benchmark": "./src/schemas/benchmark.ts",
-    "./schemas/prompts": "./src/schemas/prompts.ts",
-    "./constants/orderings": "./src/constants/orderings.ts",
-    "./constants/question-types": "./src/constants/question-types.ts",
-    "./lib/prompts/character": "./src/lib/prompts/character.ts",
-    "./lib/prompts/scene": "./src/lib/prompts/scene.ts",
-    "./lib/prompts/prop": "./src/lib/prompts/prop.ts",
-    "./lib/prompts/extract-fields": "./src/lib/prompts/extract-fields.ts",
-    "./lib/exports/headers": "./src/lib/exports/headers.ts"
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./dist/index.js"
+    },
+    "./env": {
+      "types": "./src/env.ts",
+      "default": "./dist/env.js"
+    },
+    "./db/schema": {
+      "types": "./src/db/schema.ts",
+      "default": "./dist/db/schema.js"
+    },
+    "./schemas/assets": {
+      "types": "./src/schemas/assets.ts",
+      "default": "./dist/schemas/assets.js"
+    },
+    "./schemas/benchmark": {
+      "types": "./src/schemas/benchmark.ts",
+      "default": "./dist/schemas/benchmark.js"
+    },
+    "./schemas/prompts": {
+      "types": "./src/schemas/prompts.ts",
+      "default": "./dist/schemas/prompts.js"
+    },
+    "./constants/orderings": {
+      "types": "./src/constants/orderings.ts",
+      "default": "./dist/constants/orderings.js"
+    },
+    "./constants/question-types": {
+      "types": "./src/constants/question-types.ts",
+      "default": "./dist/constants/question-types.js"
+    },
+    "./lib/prompts/character": {
+      "types": "./src/lib/prompts/character.ts",
+      "default": "./dist/lib/prompts/character.js"
+    },
+    "./lib/prompts/scene": {
+      "types": "./src/lib/prompts/scene.ts",
+      "default": "./dist/lib/prompts/scene.js"
+    },
+    "./lib/prompts/prop": {
+      "types": "./src/lib/prompts/prop.ts",
+      "default": "./dist/lib/prompts/prop.js"
+    },
+    "./lib/prompts/extract-fields": {
+      "types": "./src/lib/prompts/extract-fields.ts",
+      "default": "./dist/lib/prompts/extract-fields.js"
+    },
+    "./lib/exports/headers": {
+      "types": "./src/lib/exports/headers.ts",
+      "default": "./dist/lib/exports/headers.js"
+    }
   },
   "scripts": {
     "build": "tsc --build",
