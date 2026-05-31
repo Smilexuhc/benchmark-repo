@@ -10,7 +10,11 @@
     "./schemas/benchmark": "./src/schemas/benchmark.ts",
     "./schemas/prompts": "./src/schemas/prompts.ts",
     "./constants/orderings": "./src/constants/orderings.ts",
-    "./constants/question-types": "./src/constants/question-types.ts"
+    "./constants/question-types": "./src/constants/question-types.ts",
+    "./lib/prompts/character": "./src/lib/prompts/character.ts",
+    "./lib/prompts/scene": "./src/lib/prompts/scene.ts",
+    "./lib/prompts/prop": "./src/lib/prompts/prop.ts",
+    "./lib/prompts/extract-fields": "./src/lib/prompts/extract-fields.ts"
   },
   "scripts": {
     "build": "tsc --build",
