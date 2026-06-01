@@ -14,6 +14,5 @@ RUN pnpm --filter @benchmark-admin/web build
 
 FROM nginx:1.27-alpine
 COPY --from=web-builder /app/apps/web/dist /usr/share/nginx/html
-COPY nginx/default.conf     /etc/nginx/conf.d/default.conf
-COPY nginx/default-ssl.conf /etc/nginx/conf.d/default-ssl.conf
-EXPOSE 80 443
+COPY nginx/default.conf /etc/nginx/conf.d/default.conf
+EXPOSE 80

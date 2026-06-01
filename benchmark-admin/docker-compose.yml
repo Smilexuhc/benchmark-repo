@@ -1,3 +1,6 @@
+# benchmark-admin app stack. It no longer binds host 80/443 — the shared Caddy
+# edge proxy (see ./edge) owns those and terminates TLS, then routes
+# benchmark-admin.jy-video.cn to the `admin-nginx` service over the `edge` network.
 services:
   api:
     build:
@@ -12,6 +15,8 @@ services:
       NODE_ENV: production
     expose:
       - "3000"
+    networks:
+      - app
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
       interval: 30s
@@ -19,26 +24,22 @@ services:
       retries: 3
       start_period: 10s
 
-  nginx:
+  admin-nginx:
     build:
       context: .
       dockerfile: nginx/Dockerfile
     image: cr.volces.com/${CR_NAMESPACE}/benchmark-admin-nginx:${IMAGE_TAG:-latest}
     restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
+    expose:
+      - "80"
     depends_on:
       api:
         condition: service_healthy
-    volumes:
-      - /etc/letsencrypt:/etc/letsencrypt:ro
-      - /var/www/certbot:/var/www/certbot:ro
+    networks:
+      - app
+      - edge
 
-  certbot:
-    image: certbot/certbot
-    volumes:
-      - /etc/letsencrypt:/etc/letsencrypt
-      - /var/www/certbot:/var/www/certbot
-    entrypoint: /bin/sh -c "trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 12h & wait $$!; done"
-    restart: unless-stopped
+networks:
+  app:
+  edge:
+    external: true

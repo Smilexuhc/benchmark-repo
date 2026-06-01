@@ -1,0 +1,26 @@
+# Shared edge proxy. Bring this up ONCE on the host:
+#   docker network create edge        # one-time; the external network all stacks share
+#   docker compose -f edge/docker-compose.yml up -d
+# Then every app stack (admin, legacy, multica) attaches to the `edge` network
+# and Caddy routes to it by domain. Caddy handles TLS automatically.
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - edge
+
+networks:
+  edge:
+    external: true
+
+volumes:
+  caddy_data:
+  caddy_config:

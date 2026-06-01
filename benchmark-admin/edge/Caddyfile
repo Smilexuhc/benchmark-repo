@@ -1,0 +1,29 @@
+# Shared edge reverse proxy for this host.
+# Caddy owns :80/:443 and auto-provisions Let's Encrypt certs for every site
+# below (just point each domain's DNS A record at this host first).
+#
+# Each backend joins the external `edge` docker network and is reached by its
+# compose service name. Add a new service by copying a block below.
+
+{
+	email admin@jy-video.cn
+}
+
+# benchmark-admin (this repo's app stack — service `admin-nginx`)
+benchmark-admin.jy-video.cn {
+	reverse_proxy admin-nginx:80
+}
+
+# legacy benchmark — runs in its own compose on this host.
+# Drop its host 80/443 binding, expose an internal port, and attach it to the
+# external `edge` network, then point this block at it. Replace the host below
+# with the legacy compose service name (and port) once it's on the `edge` net.
+# legacy.jy-video.cn {
+# 	reverse_proxy legacy-web:80
+# }
+
+# multica — future service on this host. Same recipe: attach to `edge`,
+# then uncomment and set the service name + port.
+# multica.jy-video.cn {
+# 	reverse_proxy multica:3000
+# }
