@@ -169,6 +169,7 @@ class VideoBenchmarkItemIn(BaseModel):
     task_type: str = ""
     question_type: str = ""
     manual_tag: str = ""
+    difficulty: str = ""
     scene: str = ""
     screen_size: str = ""
     character_image_asset: str = ""
@@ -298,6 +299,7 @@ def list_video_benchmark_api(
     screen_size: Optional[str] = None,
     score: Optional[int] = Query(None, ge=0, le=5),
     manual_tag: Optional[str] = None,
+    difficulty: Optional[str] = None,
     needs_revision: bool = False,
     has_comments: bool = False,
 ):
@@ -314,6 +316,7 @@ def list_video_benchmark_api(
             screen_size=screen_size,
             score=score,
             manual_tag=manual_tag,
+            difficulty=difficulty,
             needs_revision=needs_revision,
             has_comments=has_comments,
         )

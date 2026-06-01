@@ -81,6 +81,7 @@ VIDEO_BENCHMARK_FIELDS = [
     "task_type",
     "question_type",
     "manual_tag",
+    "difficulty",
     "scene",
     "screen_size",
     "character_image_asset",
@@ -104,6 +105,7 @@ VIDEO_BENCHMARK_FILTER_FIELDS = [
     "shot_type",
     "task_type",
     "question_type",
+    "difficulty",
     "scene",
     "screen_size",
 ]
@@ -999,7 +1001,7 @@ def create_video_benchmark_item(conn, payload) -> int:
     row = conn.execute(
         """
         INSERT INTO video_benchmark_items (
-            shot_type, task_type, question_type, manual_tag, scene, screen_size,
+            shot_type, task_type, question_type, manual_tag, difficulty, scene, screen_size,
             character_image_asset, scene_image_asset, prop_image_asset,
             audio_input, video_input, text_prompt, judging_criteria, video_output, score,
             character_image_id, scene_image_id, prop_image_id, audio_input_id,
@@ -1007,7 +1009,7 @@ def create_video_benchmark_item(conn, payload) -> int:
             created_at, updated_at
         )
         VALUES (
-            %(shot_type)s, %(task_type)s, %(question_type)s, %(manual_tag)s, %(scene)s, %(screen_size)s,
+            %(shot_type)s, %(task_type)s, %(question_type)s, %(manual_tag)s, %(difficulty)s, %(scene)s, %(screen_size)s,
             %(character_image_asset)s, %(scene_image_asset)s, %(prop_image_asset)s,
             %(audio_input)s, %(video_input)s, %(text_prompt)s, %(judging_criteria)s, %(video_output)s, %(score)s,
             %(character_image_id)s, %(scene_image_id)s, %(prop_image_id)s, %(audio_input_id)s,
@@ -1033,6 +1035,7 @@ def update_video_benchmark_item(conn, item_id: int, payload) -> bool:
             task_type = %(task_type)s,
             question_type = %(question_type)s,
             manual_tag = %(manual_tag)s,
+            difficulty = %(difficulty)s,
             scene = %(scene)s,
             screen_size = %(screen_size)s,
             character_image_asset = %(character_image_asset)s,
@@ -1117,6 +1120,7 @@ def list_video_benchmark_items(
     screen_size: str | None = None,
     score: int | None = None,
     manual_tag: str | None = None,
+    difficulty: str | None = None,
     needs_revision: bool = False,
     has_comments: bool = False,
 ) -> dict:
@@ -1129,6 +1133,7 @@ def list_video_benchmark_items(
             "screen_size": screen_size,
             "score": score,
             "manual_tag": manual_tag,
+            "difficulty": difficulty,
             "needs_revision": needs_revision,
             "has_comments": has_comments,
         },

@@ -35,7 +35,15 @@ const SCREEN_SIZE_OPTIONS = ['16:9', '9:16', '2.39:1']
 
 const DEFAULT_PAGE_SIZE = 20
 
-type FilterKey = 'shot_type' | 'task_type' | 'question_type' | 'scene' | 'screen_size'
+type FilterKey = 'shot_type' | 'task_type' | 'question_type' | 'scene' | 'screen_size' | 'difficulty'
+
+const DIFFICULTY_OPTIONS = ['易', '中', '难']
+const DIFFICULTY_TAG_COLOR: Record<string, string> = {
+  '易': 'green',
+  '中': 'orange',
+  '难': 'red',
+}
+const DIFFICULTY_PREFIX_RE = /^【([易中难])】\s*/
 
 // 卡片上展示的 chip 字段：shot_type / question_type 提升到标题，scene / screen_size 留作小标签
 const TAG_FIELDS: FilterKey[] = ['scene', 'screen_size']
@@ -404,10 +412,22 @@ function ItemCard({
 
   // 顺序与编辑抽屉一致：测试点人工标注 → 场景 → 屏幕尺寸
   // 当 question_type 已经在标题里时，manual_tag 与之相同则去重；legacy 情况下不去重，让 legacy 文案落到下一行
+  const difficultyValue = item.difficulty?.trim()
   const manualTagValue = item.manual_tag?.trim()
-  const tags: { field: string; value: string }[] = []
-  if (manualTagValue && (!cascaderLabels || manualTagValue !== questionType)) {
-    tags.push({ field: 'manual_tag', value: manualTagValue })
+  const manualTagText = difficultyValue
+    ? manualTagValue?.replace(DIFFICULTY_PREFIX_RE, '').trim()
+    : manualTagValue
+  const shouldShowManualTag = manualTagText && (!cascaderLabels || manualTagText !== questionType)
+  const tags: { field: string; value: string; color?: string }[] = []
+  if (difficultyValue) {
+    tags.push({
+      field: 'difficulty',
+      value: difficultyValue,
+      color: DIFFICULTY_TAG_COLOR[difficultyValue] || 'default',
+    })
+  }
+  if (shouldShowManualTag) {
+    tags.push({ field: 'manual_tag', value: manualTagText })
   }
   for (const field of TAG_FIELDS) {
     const value = (item[field] as string)?.trim()
@@ -495,7 +515,7 @@ function ItemCard({
         {tags.length > 0 && (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {tags.map((t) => (
-              <Tag key={t.field} style={{ marginInlineEnd: 0 }}>
+              <Tag key={t.field} color={t.color} style={{ marginInlineEnd: 0 }}>
                 {t.value}
               </Tag>
             ))}
@@ -558,6 +578,7 @@ export default function BenchmarkItemsPage() {
     question_type: undefined,
     scene: undefined,
     screen_size: undefined,
+    difficulty: undefined,
   })
   const [cascaderPath, setCascaderPath] = useState<string[] | undefined>(undefined)
   const [manualTag, setManualTag] = useState('')
@@ -630,6 +651,7 @@ export default function BenchmarkItemsPage() {
       question_type: undefined,
       scene: undefined,
       screen_size: undefined,
+      difficulty: undefined,
     })
     setCascaderPath(undefined)
     setManualTag('')
@@ -759,6 +781,17 @@ export default function BenchmarkItemsPage() {
               setPage(1)
             }}
             style={{ width: 140 }}
+          />
+          <Select
+            allowClear
+            placeholder={FIELD_LABELS.difficulty}
+            value={filters.difficulty}
+            options={DIFFICULTY_OPTIONS.map((v) => ({ value: v, label: v }))}
+            onChange={(value) => {
+              setFilters((current) => ({ ...current, difficulty: value || undefined }))
+              setPage(1)
+            }}
+            style={{ width: 110 }}
           />
           <Select
             allowClear

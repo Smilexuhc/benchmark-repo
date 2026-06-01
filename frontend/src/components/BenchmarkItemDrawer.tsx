@@ -120,12 +120,24 @@ const MEDIA_FIELDS: {
   },
 ]
 
+const DIFFICULTY_PREFIX_RE = /^【([易中难])】\s*/
+
+function stripMatchingDifficultyPrefix(manualTag: string, difficulty: string) {
+  const match = manualTag.match(DIFFICULTY_PREFIX_RE)
+  if (match?.[1] === difficulty) {
+    return manualTag.replace(DIFFICULTY_PREFIX_RE, '')
+  }
+  return manualTag
+}
+
 function pickInput(item: VideoBenchmarkItem): VideoBenchmarkItemInput {
+  const difficulty = item.difficulty ?? ''
   return {
     shot_type: item.shot_type,
     task_type: item.task_type,
     question_type: item.question_type,
-    manual_tag: item.manual_tag ?? '',
+    manual_tag: stripMatchingDifficultyPrefix(item.manual_tag ?? '', difficulty),
+    difficulty,
     scene: item.scene,
     screen_size: item.screen_size,
     character_image_asset: item.character_image_asset,
@@ -530,12 +542,26 @@ export default function BenchmarkItemDrawer({
         </div>
         <div style={{ gridColumn: '1 / -1' }}>
           <Field label={FIELD_LABELS.manual_tag}>
-            <Input
-              value={form.manual_tag}
-              onChange={(e) => set('manual_tag', e.target.value)}
-              placeholder="对该题目的人工补充描述，例如：动作断层跳变 （动作中途突然跳转，无过渡衔接，前后姿态割裂）"
-              allowClear
-            />
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <Select
+                value={form.difficulty || undefined}
+                onChange={(value) => set('difficulty', (value ?? '') as string)}
+                placeholder={FIELD_LABELS.difficulty}
+                allowClear
+                options={[
+                  { label: '易', value: '易' },
+                  { label: '中', value: '中' },
+                  { label: '难', value: '难' },
+                ]}
+                style={{ width: 82, flexShrink: 0 }}
+              />
+              <Input
+                value={form.manual_tag}
+                onChange={(e) => set('manual_tag', e.target.value)}
+                placeholder="对该题目的人工补充描述，例如：动作断层跳变 （动作中途突然跳转，无过渡衔接，前后姿态割裂）"
+                allowClear
+              />
+            </div>
           </Field>
         </div>
         {BASIC_FIELDS.map((key) => {
