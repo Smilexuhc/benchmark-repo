@@ -10,7 +10,7 @@ COPY packages/shared/package.json ./packages/shared/
 RUN pnpm install --frozen-lockfile
 
 COPY . .
-RUN pnpm --filter @benchmark-admin/web build
+RUN pnpm --filter @benchmark-admin/web... build
 
 FROM nginx:1.27-alpine
 COPY --from=web-builder /app/apps/web/dist /usr/share/nginx/html
