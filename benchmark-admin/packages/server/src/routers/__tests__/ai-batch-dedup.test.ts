@@ -6,7 +6,7 @@
  * generated image row but *before* the client receives the `done` event. The
  * client resubscribes with the still-pending id under the SAME batchKey.
  * Without the backstop, the server would re-generate + re-insert, producing
- * a duplicate assetImages row and a duplicate paid OpenRouter call.
+ * a duplicate media row and a duplicate paid OpenRouter call.
  */
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -108,17 +108,11 @@ describe('ai.batchRegenerate (batchKey, id) dedup', () => {
     // CRITICAL: no second generateImage call.
     expect(mockGenerateImage.mock.calls.length).toBe(2);
 
-    // CRITICAL: only one assetImages row per asset.
-    const { assetImages } = await import('@benchmark-admin/shared/db/schema');
+    // CRITICAL: only one media row per asset.
+    const { media } = await import('@benchmark-admin/shared/db/schema');
     const { eq } = await import('drizzle-orm');
-    const rowsForA = await testDb
-      .select()
-      .from(assetImages)
-      .where(eq(assetImages.assetId, a.id));
-    const rowsForB = await testDb
-      .select()
-      .from(assetImages)
-      .where(eq(assetImages.assetId, b.id));
+    const rowsForA = await testDb.select().from(media).where(eq(media.assetId, a.id));
+    const rowsForB = await testDb.select().from(media).where(eq(media.assetId, b.id));
     expect(rowsForA.length).toBe(1);
     expect(rowsForB.length).toBe(1);
   });
@@ -142,12 +136,9 @@ describe('ai.batchRegenerate (batchKey, id) dedup', () => {
     }
     expect(mockGenerateImage.mock.calls.length).toBe(2);
 
-    const { assetImages } = await import('@benchmark-admin/shared/db/schema');
+    const { media } = await import('@benchmark-admin/shared/db/schema');
     const { eq } = await import('drizzle-orm');
-    const rows = await testDb
-      .select()
-      .from(assetImages)
-      .where(eq(assetImages.assetId, a.id));
+    const rows = await testDb.select().from(media).where(eq(media.assetId, a.id));
     // Assets legitimately accumulate multiple generated images across separate
     // runs — each run gets its own row.
     expect(rows.length).toBe(2);

@@ -55,18 +55,36 @@ describe('mediaAssetsRouter', () => {
 
   it('lists all images without dedup', async () => {
     const asset = await caller.assets.create({ kind: 'character', name: 'Dedup Test', data: {} });
-    await caller.assets.attachImage({ id: asset.id, objectKey: 'images/shared-key.png', source: 'test' });
-    await caller.assets.attachImage({ id: asset.id, objectKey: 'images/shared-key.png', source: 'test' });
+    await caller.assets.attachImage({
+      id: asset.id,
+      objectKey: 'images/shared-key.png',
+      source: 'test',
+    });
+    await caller.assets.attachImage({
+      id: asset.id,
+      objectKey: 'images/shared-key.png',
+      source: 'test',
+    });
 
     const { items } = await caller.mediaAssets.list({ dedup: false });
-    const shared = items.filter((r: { objectKey: string }) => r.objectKey === 'images/shared-key.png');
+    const shared = items.filter(
+      (r: { objectKey: string }) => r.objectKey === 'images/shared-key.png',
+    );
     expect(shared.length).toBe(2);
   });
 
   it('deduplicates by object_key when dedup=true', async () => {
     const asset = await caller.assets.create({ kind: 'character', name: 'Dedup Test 2', data: {} });
-    await caller.assets.attachImage({ id: asset.id, objectKey: 'images/dup-key.png', source: 'test' });
-    await caller.assets.attachImage({ id: asset.id, objectKey: 'images/dup-key.png', source: 'test' });
+    await caller.assets.attachImage({
+      id: asset.id,
+      objectKey: 'images/dup-key.png',
+      source: 'test',
+    });
+    await caller.assets.attachImage({
+      id: asset.id,
+      objectKey: 'images/dup-key.png',
+      source: 'test',
+    });
 
     const { items: dedupItems } = await caller.mediaAssets.list({ dedup: true });
     const { items: allItems } = await caller.mediaAssets.list({ dedup: false });
@@ -81,15 +99,104 @@ describe('mediaAssetsRouter', () => {
 
   it('filters by kind', async () => {
     const sceneAsset = await caller.assets.create({ kind: 'scene', name: 'Scene2', data: {} });
-    await caller.assets.attachImage({ id: sceneAsset.id, objectKey: 'images/scene-img.png', source: 'test' });
+    await caller.assets.attachImage({
+      id: sceneAsset.id,
+      objectKey: 'images/scene-img.png',
+      source: 'test',
+    });
 
     const { items } = await caller.mediaAssets.list({ kind: 'scene', dedup: false });
-    expect(items.every((r: { assetKind: string }) => r.assetKind === 'scene')).toBe(true);
+    expect(items.every((r: { assetKind: string | null }) => r.assetKind === 'scene')).toBe(true);
+  });
+
+  it('surfaces standalone media (asset_id NULL) in the unfiltered list', async () => {
+    const { getTestDb } = await import('../../db/__tests__/pglite.js');
+    const testDb = await getTestDb();
+    const { media } = await import('@benchmark-admin/shared/db/schema');
+    await testDb.insert(media).values({
+      assetId: null,
+      objectKey: 'audios/standalone.mp3',
+      source: 'uploaded',
+      mediaType: 'audio',
+    });
+
+    const { items } = await caller.mediaAssets.list({ dedup: false });
+    const standalone = items.find(
+      (r: { objectKey: string }) => r.objectKey === 'audios/standalone.mp3',
+    );
+    expect(standalone).toBeDefined();
+    expect(standalone.assetId).toBeNull();
+    expect(standalone.assetKind).toBeNull();
+  });
+
+  it('hides media whose parent asset was soft-deleted (Gap B, both branches)', async () => {
+    const asset = await caller.assets.create({ kind: 'character', name: 'HiddenParent', data: {} });
+    await caller.assets.attachImage({
+      id: asset.id,
+      objectKey: 'images/hidden-parent-123456789012345678901234.png',
+      source: 'uploaded',
+    });
+
+    // Visible before the parent is deleted.
+    const before = await caller.mediaAssets.list({ dedup: false });
+    expect(
+      before.items.some(
+        (r: { objectKey: string }) => r.objectKey === 'images/hidden-parent-123456789012345678901234.png',
+      ),
+    ).toBe(true);
+
+    await caller.assets.delete({ id: asset.id });
+
+    const plain = await caller.mediaAssets.list({ dedup: false });
+    expect(
+      plain.items.some(
+        (r: { objectKey: string }) => r.objectKey === 'images/hidden-parent-123456789012345678901234.png',
+      ),
+    ).toBe(false);
+
+    const dedup = await caller.mediaAssets.list({ dedup: true });
+    expect(
+      dedup.items.some(
+        (r: { objectKey: string }) => r.objectKey === 'images/hidden-parent-123456789012345678901234.png',
+      ),
+    ).toBe(false);
+  });
+
+  it('keeps standalone media visible even though it has no parent asset (Gap B guard)', async () => {
+    const { getTestDb } = await import('../../db/__tests__/pglite.js');
+    const testDb = await getTestDb();
+    const { media } = await import('@benchmark-admin/shared/db/schema');
+    await testDb.insert(media).values({
+      assetId: null,
+      objectKey: 'videos/standalone-vis-123456789012345678901234.mp4',
+      source: 'uploaded',
+      mediaType: 'video',
+    });
+
+    // The parent clause is `asset_id IS NULL OR parent alive` — a NULL parent
+    // must NOT be filtered out by the EXISTS subquery.
+    const plain = await caller.mediaAssets.list({ dedup: false });
+    expect(
+      plain.items.some(
+        (r: { objectKey: string }) => r.objectKey === 'videos/standalone-vis-123456789012345678901234.mp4',
+      ),
+    ).toBe(true);
+
+    const dedup = await caller.mediaAssets.list({ dedup: true });
+    expect(
+      dedup.items.some(
+        (r: { objectKey: string }) => r.objectKey === 'videos/standalone-vis-123456789012345678901234.mp4',
+      ),
+    ).toBe(true);
   });
 
   it('each row includes a presigned url', async () => {
     const asset = await caller.assets.create({ kind: 'character', name: 'URL Test', data: {} });
-    await caller.assets.attachImage({ id: asset.id, objectKey: 'images/url-test.png', source: 'test' });
+    await caller.assets.attachImage({
+      id: asset.id,
+      objectKey: 'images/url-test.png',
+      source: 'test',
+    });
 
     const { items } = await caller.mediaAssets.list({ dedup: false });
     for (const row of items) {

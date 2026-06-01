@@ -122,9 +122,13 @@ describe('aiRouter.batchRegenerate', () => {
     mockGenerateImage.mockReset().mockResolvedValue({ objectKey: 'images/observable.png' });
     mockGeneratePrompt.mockReset().mockResolvedValue('test prompt');
 
-    const asset = await caller.assets.create({ kind: 'character', name: 'ObservableTest', data: {} });
+    const asset = await caller.assets.create({
+      kind: 'character',
+      name: 'ObservableTest',
+      data: {},
+    });
 
-    const { assetImages } = await import('@benchmark-admin/shared/db/schema');
+    const { media } = await import('@benchmark-admin/shared/db/schema');
     const { eq } = await import('drizzle-orm');
 
     const sub = await caller.ai.batchRegenerate({ ids: [asset.id], batchKey: 'test-observable' });
@@ -133,10 +137,7 @@ describe('aiRouter.batchRegenerate', () => {
     for await (const event of sub) {
       if (event.status === 'done') {
         // Check DB — the row should already exist since write happens before yield
-        const rows = await testDb
-          .select()
-          .from(assetImages)
-          .where(eq(assetImages.assetId, asset.id));
+        const rows = await testDb.select().from(media).where(eq(media.assetId, asset.id));
         dbRowFoundBeforeDone = rows.some(
           (r: { objectKey: string }) => r.objectKey === 'images/observable.png',
         );
