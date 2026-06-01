@@ -13,6 +13,12 @@ const PICKER_ROW_PX = 160;
 const PICKER_SCROLL_HEIGHT = 'calc(100vh - 260px)';
 const PICKER_NEAR_BOTTOM_PX = 320;
 
+const MEDIA_TYPE_ACCEPT: Record<string, string> = {
+  image: 'image/*',
+  audio: 'audio/*',
+  video: 'video/*',
+};
+
 type VRow = { key: string | number; index: number; start: number };
 
 export type MediaKind = 'image' | 'audio' | 'video';
@@ -36,6 +42,12 @@ export function MediaPicker({
   onChange,
 }: MediaPickerProps) {
   const [open, setOpen] = useState(false);
+  const uploadInputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const utils = trpc.useUtils();
+
+  const getUploadUrl = trpc.mediaAssets.getUploadUrl.useMutation();
+  const createMedia = trpc.mediaAssets.create.useMutation();
 
   const list = trpc.mediaAssets.list.useInfiniteQuery(
     {
@@ -80,6 +92,44 @@ export function MediaPicker({
     }
   }
 
+  async function handleUploadFiles(files: FileList | null) {
+    if (!files || files.length === 0) return;
+    setUploading(true);
+    const newIds: number[] = [];
+    try {
+      for (const file of Array.from(files)) {
+        const { uploadUrl, objectKey } = await getUploadUrl.mutateAsync({
+          mediaType,
+          filename: file.name,
+          contentType: file.type || 'application/octet-stream',
+        });
+        await fetch(uploadUrl, {
+          method: 'PUT',
+          body: file,
+          headers: { 'Content-Type': file.type || 'application/octet-stream' },
+        });
+        const created = await createMedia.mutateAsync({
+          objectKey,
+          mediaType,
+          assetKind: assetKind ?? 'character',
+          filename: file.name,
+        });
+        newIds.push(created.id);
+      }
+      await utils.mediaAssets.list.invalidate();
+      if (newIds.length > 0) {
+        if (multi) {
+          onChange([...selectedIds, ...newIds]);
+        } else {
+          onChange([newIds[newIds.length - 1]!]);
+        }
+      }
+    } finally {
+      setUploading(false);
+      if (uploadInputRef.current) uploadInputRef.current.value = '';
+    }
+  }
+
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
@@ -87,9 +137,28 @@ export function MediaPicker({
           {label}
           {multi ? ' (可多选)' : ''}
         </div>
-        <Button type="button" size="sm" variant="outline" onClick={() => setOpen(true)}>
-          选择 ({selectedIds.length})
-        </Button>
+        <div className="flex gap-1">
+          <Button type="button" size="sm" variant="outline" onClick={() => setOpen(true)}>
+            选择素材 ({selectedIds.length})
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={uploading}
+            onClick={() => uploadInputRef.current?.click()}
+          >
+            {uploading ? '上传中…' : '上传素材'}
+          </Button>
+          <input
+            ref={uploadInputRef}
+            type="file"
+            className="hidden"
+            accept={MEDIA_TYPE_ACCEPT[mediaType]}
+            multiple={multi}
+            onChange={(e) => handleUploadFiles(e.target.files)}
+          />
+        </div>
       </div>
       <div className="flex flex-wrap gap-2">
         {selected.map((it: MediaItem) => (

@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { type SQL, and, desc, eq, lt, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { assetImages, assets } from '@benchmark-admin/shared/db/schema';
@@ -108,5 +109,52 @@ export const mediaAssetsRouter = t.router({
       const nextCursor = hasMore && pageRows.length > 0 ? pageRows[pageRows.length - 1]?.id : null;
 
       return { items: await addUrls(pageRows), nextCursor: nextCursor ?? null };
+    }),
+
+  getUploadUrl: protectedProcedure
+    .input(
+      z.object({
+        mediaType: z.enum(['image', 'audio', 'video']),
+        filename: z.string().min(1),
+        contentType: z.string().min(1),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      const prefixMap = { image: 'images', audio: 'audios', video: 'videos' } as const;
+      const ext = path.extname(input.filename).toLowerCase() || '.bin';
+      const objectKey = storage.newObjectKey(ext, prefixMap[input.mediaType]);
+      const uploadUrl = await storage.getPresignedPutUrl(objectKey, input.contentType);
+      return { uploadUrl, objectKey };
+    }),
+
+  create: protectedProcedure
+    .input(
+      z.object({
+        objectKey: z.string().min(1),
+        mediaType: z.enum(['image', 'audio', 'video']),
+        assetKind: z.enum(['character', 'scene', 'prop']).default('character'),
+        filename: z.string().default(''),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      const [asset] = await db
+        .insert(assets)
+        .values({ kind: input.assetKind, name: input.filename || input.objectKey })
+        .returning();
+      if (!asset) throw new Error('Failed to create asset');
+
+      const [img] = await db
+        .insert(assetImages)
+        .values({
+          assetId: asset.id,
+          objectKey: input.objectKey,
+          source: 'uploaded',
+          mediaType: input.mediaType,
+        })
+        .returning();
+      if (!img) throw new Error('Failed to create asset image');
+
+      const url = await storage.getPresignedUrl(img.objectKey).catch(() => '');
+      return { ...img, url, assetKind: asset.kind };
     }),
 });

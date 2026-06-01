@@ -7,7 +7,7 @@ const ITEMS: NavItem[] = [
   { to: '/characters', label: '角色' },
   { to: '/scenes', label: '场景' },
   { to: '/props', label: '道具' },
-  { to: '/benchmark', label: '视频基准' },
+  { to: '/benchmark', label: '题目' },
 ];
 
 export function Nav() {
