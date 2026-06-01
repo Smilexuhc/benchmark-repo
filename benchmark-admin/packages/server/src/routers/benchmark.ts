@@ -1,6 +1,6 @@
 import {
-  assetImages,
   benchmarkItemComments,
+  media,
   videoBenchmarkItems,
   videoBenchmarkMediaLinks,
 } from '@benchmark-admin/shared/db/schema';
@@ -31,9 +31,9 @@ type LinkRow = {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-// RF-2: the media-links table enforces single-cardinality roles via a partial
-// unique index. A constraint violation (PG 23505) is a client conflict — map it
-// to 409 CONFLICT rather than letting it surface as an opaque 500.
+// UNIQUE(item_id, role, media_id) rejects the same file filling the same role
+// twice. A constraint violation (PG 23505) is a client conflict — map it to
+// 409 CONFLICT rather than letting it surface as an opaque 500.
 function isUniqueViolation(err: unknown): boolean {
   return typeof err === 'object' && err !== null && (err as { code?: string }).code === '23505';
 }
@@ -44,32 +44,27 @@ function buildLinkRows(
     characterImageIds: number[];
     sceneImageIds: number[];
     propImageIds: number[];
-    audioInputId: number | null;
-    videoInputId: number | null;
-    videoOutputId: number | null;
+    audioInputIds: number[];
+    videoInputIds: number[];
+    videoOutputIds: number[];
   },
 ): LinkRow[] {
   const rows: LinkRow[] = [];
-  // Dedup each multi-cardinality array to avoid duplicate link inserts
-  const uniqueCharImgs = [...new Set(bundle.characterImageIds)];
-  const uniqueSceneImgs = [...new Set(bundle.sceneImageIds)];
-  const uniquePropImgs = [...new Set(bundle.propImageIds)];
-
-  uniqueCharImgs.forEach((mediaId, i) => {
-    rows.push({ itemId, mediaId, role: 'character_image', sortOrder: i });
-  });
-  uniqueSceneImgs.forEach((mediaId, i) => {
-    rows.push({ itemId, mediaId, role: 'scene_image', sortOrder: i });
-  });
-  uniquePropImgs.forEach((mediaId, i) => {
-    rows.push({ itemId, mediaId, role: 'prop_image', sortOrder: i });
-  });
-  if (bundle.audioInputId !== null)
-    rows.push({ itemId, mediaId: bundle.audioInputId, role: 'audio_input', sortOrder: 0 });
-  if (bundle.videoInputId !== null)
-    rows.push({ itemId, mediaId: bundle.videoInputId, role: 'video_input', sortOrder: 0 });
-  if (bundle.videoOutputId !== null)
-    rows.push({ itemId, mediaId: bundle.videoOutputId, role: 'video_output', sortOrder: 0 });
+  // All six roles are multi-cardinality. Dedup each array to avoid duplicate
+  // link inserts, then emit one row per file with an incrementing sortOrder.
+  const roleArrays: [string, number[]][] = [
+    ['character_image', bundle.characterImageIds],
+    ['scene_image', bundle.sceneImageIds],
+    ['prop_image', bundle.propImageIds],
+    ['audio_input', bundle.audioInputIds],
+    ['video_input', bundle.videoInputIds],
+    ['video_output', bundle.videoOutputIds],
+  ];
+  for (const [role, ids] of roleArrays) {
+    [...new Set(ids)].forEach((mediaId, i) => {
+      rows.push({ itemId, mediaId, role, sortOrder: i });
+    });
+  }
   return rows;
 }
 
@@ -90,52 +85,55 @@ async function fetchItemWithMedia(id: number) {
   const comments = await db
     .select()
     .from(benchmarkItemComments)
-    .where(eq(benchmarkItemComments.itemId, id))
+    .where(and(eq(benchmarkItemComments.itemId, id), isNull(benchmarkItemComments.deletedAt)))
     .orderBy(benchmarkItemComments.createdAt);
 
-  const media: MediaByRoleType = {
+  const mediaByRole: MediaByRoleType = {
     character_image: [],
     scene_image: [],
     prop_image: [],
-    audio_input: null,
-    video_input: null,
-    video_output: null,
+    audio_input: [],
+    video_input: [],
+    video_output: [],
   };
 
   await Promise.allSettled(
     links.map(async (link) => {
-      const [imgRow] = await db
+      const [mediaRow] = await db
         .select()
-        .from(assetImages)
-        .where(eq(assetImages.id, link.mediaId))
+        .from(media)
+        .where(and(eq(media.id, link.mediaId), isNull(media.deletedAt)))
         .limit(1);
-      const url = imgRow ? await storage.getPresignedUrl(imgRow.objectKey).catch(() => '') : '';
+      // A soft-deleted media file yields no row; skip the link rather than
+      // surfacing a dangling reference.
+      if (!mediaRow) return;
+      const url = await storage.getPresignedUrl(mediaRow.objectKey).catch(() => '');
       const linkOut: MediaLinkOutType = { ...link, url };
 
       switch (link.role) {
         case 'character_image':
-          media.character_image.push(linkOut);
+          mediaByRole.character_image.push(linkOut);
           break;
         case 'scene_image':
-          media.scene_image.push(linkOut);
+          mediaByRole.scene_image.push(linkOut);
           break;
         case 'prop_image':
-          media.prop_image.push(linkOut);
+          mediaByRole.prop_image.push(linkOut);
           break;
         case 'audio_input':
-          media.audio_input = linkOut;
+          mediaByRole.audio_input.push(linkOut);
           break;
         case 'video_input':
-          media.video_input = linkOut;
+          mediaByRole.video_input.push(linkOut);
           break;
         case 'video_output':
-          media.video_output = linkOut;
+          mediaByRole.video_output.push(linkOut);
           break;
       }
     }),
   );
 
-  return { ...item, media, comments };
+  return { ...item, media: mediaByRole, comments };
 }
 
 // List rows render only scalar columns (id, shotType, questionType, scene,
@@ -417,7 +415,12 @@ export const benchmarkRouter = t.router({
         return db
           .select()
           .from(benchmarkItemComments)
-          .where(eq(benchmarkItemComments.itemId, input.itemId))
+          .where(
+            and(
+              eq(benchmarkItemComments.itemId, input.itemId),
+              isNull(benchmarkItemComments.deletedAt),
+            ),
+          )
           .orderBy(benchmarkItemComments.createdAt);
       }),
 
@@ -440,8 +443,14 @@ export const benchmarkRouter = t.router({
       .input(z.object({ commentId: z.number().int().positive() }))
       .mutation(async ({ input }) => {
         const [deleted] = await db
-          .delete(benchmarkItemComments)
-          .where(eq(benchmarkItemComments.id, input.commentId))
+          .update(benchmarkItemComments)
+          .set({ deletedAt: new Date() })
+          .where(
+            and(
+              eq(benchmarkItemComments.id, input.commentId),
+              isNull(benchmarkItemComments.deletedAt),
+            ),
+          )
           .returning({ commentId: benchmarkItemComments.id });
         if (!deleted) throw new TRPCError({ code: 'NOT_FOUND' });
         return { commentId: deleted.commentId };

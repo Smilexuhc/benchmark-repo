@@ -1,6 +1,6 @@
-import { type SQL, and, desc, eq, lt, sql } from 'drizzle-orm';
+import { type SQL, and, desc, eq, isNull, lt, sql } from 'drizzle-orm';
 import { z } from 'zod';
-import { assetImages, assets } from '@benchmark-admin/shared/db/schema';
+import { assets, media } from '@benchmark-admin/shared/db/schema';
 import { db } from '../db/index.js';
 import * as storage from '../services/storage/index.js';
 import { t } from '../trpc/init.js';
@@ -8,12 +8,12 @@ import { protectedProcedure } from '../trpc/procedures.js';
 
 type MediaRow = {
   id: number;
-  assetId: number;
+  assetId: number | null;
   objectKey: string;
   source: string;
   mediaType: string;
   createdAt: Date;
-  assetKind: string;
+  assetKind: string | null;
 };
 
 async function addUrls(rows: MediaRow[]) {
@@ -40,10 +40,13 @@ export const mediaAssetsRouter = t.router({
       }),
     )
     .query(async ({ input }) => {
-      const joinConditions: SQL[] = [];
+      // Soft-deleted media never surfaces. A kind filter constrains assets.kind,
+      // which (under the LEFT JOIN) also excludes standalone media (asset_id NULL)
+      // — intended, since a standalone file has no asset taxonomy to match.
+      const joinConditions: SQL[] = [isNull(media.deletedAt)];
       if (input.kind) joinConditions.push(eq(assets.kind, input.kind));
-      if (input.mediaType) joinConditions.push(eq(assetImages.mediaType, input.mediaType));
-      if (input.cursor) joinConditions.push(lt(assetImages.id, input.cursor));
+      if (input.mediaType) joinConditions.push(eq(media.mediaType, input.mediaType));
+      if (input.cursor) joinConditions.push(lt(media.id, input.cursor));
 
       if (input.dedup) {
         // DISTINCT ON (object_key) collapses duplicate object keys — one row per unique file.
@@ -54,6 +57,8 @@ export const mediaAssetsRouter = t.router({
         // with object_key); the OUTER query then paginates by id so the cursor
         // (id < cursor, ORDER BY id DESC) is consistent with what we advance on —
         // otherwise pages keyed on id but ordered by object_key skip/duplicate rows.
+        // LEFT JOIN keeps standalone media (asset_id NULL); a kind filter still
+        // narrows to that asset taxonomy (and thus drops standalone rows).
         const kindClause = input.kind ? sql` AND a.kind = ${input.kind}` : sql``;
         const mtClause = input.mediaType ? sql` AND ai.media_type = ${input.mediaType}` : sql``;
         const cursorClause = input.cursor ? sql` WHERE dedup.id < ${input.cursor}` : sql``;
@@ -68,9 +73,9 @@ export const mediaAssetsRouter = t.router({
               ai.media_type  AS "mediaType",
               ai.created_at  AS "createdAt",
               a.kind         AS "assetKind"
-            FROM asset_images ai
-            JOIN assets a ON a.id = ai.asset_id
-            WHERE true${kindClause}${mtClause}
+            FROM media ai
+            LEFT JOIN assets a ON a.id = ai.asset_id
+            WHERE ai.deleted_at IS NULL${kindClause}${mtClause}
             ORDER BY ai.object_key, ai.id
           ) dedup
           ${cursorClause}
@@ -80,27 +85,30 @@ export const mediaAssetsRouter = t.router({
 
         const raw = await db.execute(query);
         // drizzle-orm/pglite returns { rows, fields }; drizzle-orm/neon returns an array
-        const allRows = (Array.isArray(raw) ? raw : (raw as { rows: unknown[] }).rows) as MediaRow[];
+        const allRows = (
+          Array.isArray(raw) ? raw : (raw as { rows: unknown[] }).rows
+        ) as MediaRow[];
         const hasMore = allRows.length > LIMIT;
         const pageRows = allRows.slice(0, LIMIT);
-        const nextCursor = hasMore && pageRows.length > 0 ? pageRows[pageRows.length - 1]?.id : null;
+        const nextCursor =
+          hasMore && pageRows.length > 0 ? pageRows[pageRows.length - 1]?.id : null;
         return { items: await addUrls(pageRows), nextCursor: nextCursor ?? null };
       }
 
       const rawRows = await db
         .select({
-          id: assetImages.id,
-          assetId: assetImages.assetId,
-          objectKey: assetImages.objectKey,
-          source: assetImages.source,
-          mediaType: assetImages.mediaType,
-          createdAt: assetImages.createdAt,
+          id: media.id,
+          assetId: media.assetId,
+          objectKey: media.objectKey,
+          source: media.source,
+          mediaType: media.mediaType,
+          createdAt: media.createdAt,
           assetKind: assets.kind,
         })
-        .from(assetImages)
-        .innerJoin(assets, eq(assetImages.assetId, assets.id))
-        .where(joinConditions.length > 0 ? and(...joinConditions) : undefined)
-        .orderBy(desc(assetImages.id))
+        .from(media)
+        .leftJoin(assets, eq(media.assetId, assets.id))
+        .where(and(...joinConditions))
+        .orderBy(desc(media.id))
         .limit(LIMIT + 1);
 
       const hasMore = rawRows.length > LIMIT;

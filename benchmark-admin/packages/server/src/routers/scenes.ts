@@ -1,6 +1,6 @@
-import { assetImages, assets } from '@benchmark-admin/shared/db/schema';
+import { assets, media } from '@benchmark-admin/shared/db/schema';
 import { TRPCError } from '@trpc/server';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../db/index.js';
 import * as ai from '../services/ai/index.js';
@@ -34,8 +34,8 @@ export const scenesRouter = t.router({
 
       const [coverImg] = await db
         .select()
-        .from(assetImages)
-        .where(eq(assetImages.id, scene.coverImageId))
+        .from(media)
+        .where(and(eq(media.id, scene.coverImageId), isNull(media.deletedAt)))
         .limit(1);
 
       if (!coverImg) {
@@ -53,10 +53,10 @@ export const scenesRouter = t.router({
 
       // The image is already in TOS; if the link insert fails, clean up the
       // orphaned object rather than leaving it stranded in the bucket.
-      let img: typeof assetImages.$inferSelect | undefined;
+      let img: typeof media.$inferSelect | undefined;
       try {
         [img] = await db
-          .insert(assetImages)
+          .insert(media)
           .values({
             assetId: input.id,
             objectKey,

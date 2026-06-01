@@ -1,6 +1,6 @@
 import { createInsertSchema, createSelectSchema } from 'drizzle-zod';
 import { z } from 'zod';
-import { assetImages, assets } from '../db/schema.js';
+import { assets, media } from '../db/schema.js';
 
 // ── JSONB data variants ────────────────────────────────────────────────────────
 // era/genre/name are promoted columns (RF-1) — excluded from data to avoid drift.
@@ -14,7 +14,6 @@ export const CharacterDataSchema = z.object({
   features: z.string().optional(),
   prompt: z.string().optional(),
   description: z.string().optional(),
-  title: z.string().optional(),
 });
 
 export const SceneDataSchema = z.object({
@@ -23,14 +22,12 @@ export const SceneDataSchema = z.object({
   elements: z.array(z.string()).optional(),
   prompt: z.string().optional(),
   description: z.string().optional(),
-  title: z.string().optional(),
 });
 
 export const PropDataSchema = z.object({
   category: z.string().optional(),
   prompt: z.string().optional(),
   description: z.string().optional(),
-  title: z.string().optional(),
 });
 
 export type CharacterData = z.infer<typeof CharacterDataSchema>;
@@ -60,9 +57,11 @@ export const AssetSchema = z.discriminatedUnion('kind', [CharacterAsset, SceneAs
 
 export type Asset = z.infer<typeof AssetSchema>;
 
-// Asset image output — includes presigned URL injected at query time (not a DB column)
-export const AssetImageOut = createSelectSchema(assetImages).extend({
-  url: z.string().url(),
+// Media output — includes presigned URL injected at query time (not a DB column).
+// url is a presigned URL, or '' when presigning degraded (one TOS failure must
+// not reject the whole payload) — so the contract allows the empty fallback.
+export const AssetImageOut = createSelectSchema(media).extend({
+  url: z.union([z.string().url(), z.literal('')]),
 });
 
 export type AssetImageOutType = z.infer<typeof AssetImageOut>;

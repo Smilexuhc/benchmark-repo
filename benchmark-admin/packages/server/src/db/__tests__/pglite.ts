@@ -9,10 +9,13 @@ import { sql } from 'drizzle-orm';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const MIGRATION_SQL = readFileSync(
-  join(__dirname, '../../../../../drizzle/migrations/0000_same_ma_gnuci.sql'),
-  'utf-8',
-);
+// Apply migrations in journal order so the test schema matches production.
+const MIGRATIONS_DIR = join(__dirname, '../../../../../drizzle/migrations');
+const MIGRATION_FILES = [
+  '0000_same_ma_gnuci.sql',
+  '0001_add_comment_index.sql',
+  '0002_decouple_media.sql',
+];
 
 type TestDb = ReturnType<typeof drizzle<typeof schema>>;
 
@@ -23,12 +26,15 @@ export async function getTestDb(): Promise<TestDb> {
 
   const pglite = new PGlite();
 
-  const stmts = MIGRATION_SQL.split('--> statement-breakpoint')
-    .map((s) => s.trim())
-    .filter(Boolean);
-
-  for (const stmt of stmts) {
-    await pglite.exec(stmt);
+  for (const file of MIGRATION_FILES) {
+    const fileSql = readFileSync(join(MIGRATIONS_DIR, file), 'utf-8');
+    const stmts = fileSql
+      .split('--> statement-breakpoint')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    for (const stmt of stmts) {
+      await pglite.exec(stmt);
+    }
   }
 
   _db = drizzle(pglite, { schema });
@@ -44,7 +50,7 @@ export async function resetTestDb(): Promise<void> {
       video_benchmark_media_links,
       benchmark_item_comments,
       video_benchmark_items,
-      asset_images,
+      media,
       assets
     RESTART IDENTITY CASCADE
   `);

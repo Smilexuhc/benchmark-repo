@@ -89,10 +89,20 @@ describe('assetsRouter', () => {
     it('filters characters by era', async () => {
       // Insert 3 古代 and 2 现代 characters
       for (let i = 0; i < 3; i++) {
-        await caller.assets.create({ kind: 'character', name: `古代角色${i}`, era: '古代', data: {} });
+        await caller.assets.create({
+          kind: 'character',
+          name: `古代角色${i}`,
+          era: '古代',
+          data: {},
+        });
       }
       for (let i = 0; i < 2; i++) {
-        await caller.assets.create({ kind: 'character', name: `现代角色${i}`, era: '现代', data: {} });
+        await caller.assets.create({
+          kind: 'character',
+          name: `现代角色${i}`,
+          era: '现代',
+          data: {},
+        });
       }
 
       const { items } = await caller.assets.list({ kind: 'character', filters: { era: ['古代'] } });
@@ -103,7 +113,10 @@ describe('assetsRouter', () => {
       await caller.assets.create({ kind: 'character', name: '人类角色', data: { type: '人类' } });
       await caller.assets.create({ kind: 'character', name: '动物角色', data: { type: '动物' } });
 
-      const { items } = await caller.assets.list({ kind: 'character', filters: { type: ['人类'] } });
+      const { items } = await caller.assets.list({
+        kind: 'character',
+        filters: { type: ['人类'] },
+      });
       expect(items.every((i: { data: { type?: string } }) => i.data.type === '人类')).toBe(true);
     });
   });
@@ -171,7 +184,7 @@ describe('assetsRouter', () => {
       expect(withCover.images.length).toBe(2);
     });
 
-    it('deleteImage removes the image', async () => {
+    it('deleteImage soft-deletes the image and preserves the TOS object bytes', async () => {
       const asset = await caller.assets.create({ kind: 'prop', name: 'DelImgProp', data: {} });
       const img = await caller.assets.attachImage({
         id: asset.id,
@@ -184,6 +197,10 @@ describe('assetsRouter', () => {
 
       const fetched = await caller.assets.get({ id: asset.id });
       expect(fetched.images.every((i: { id: number }) => i.id !== img.id)).toBe(true);
+
+      // Soft delete must keep the file recoverable — bytes are never removed.
+      const storage = await import('../../services/storage/index.js');
+      expect(storage.deleteObject).not.toHaveBeenCalledWith('images/del.png');
     });
   });
 

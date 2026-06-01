@@ -1,7 +1,7 @@
 import { TRPCError } from '@trpc/server';
 import { type SQL, and, desc, eq, inArray, isNotNull, isNull, lt, sql } from 'drizzle-orm';
 import { z } from 'zod';
-import { assetImages, assets } from '@benchmark-admin/shared/db/schema';
+import { assets, media } from '@benchmark-admin/shared/db/schema';
 import { AssetInsert, AssetUpdate } from '@benchmark-admin/shared/schemas/assets';
 import { db } from '../db/index.js';
 import * as storage from '../services/storage/index.js';
@@ -16,8 +16,8 @@ async function fetchAssetWithImages(id: number) {
 
   const imageRows = await db
     .select()
-    .from(assetImages)
-    .where(eq(assetImages.assetId, id));
+    .from(media)
+    .where(and(eq(media.assetId, id), isNull(media.deletedAt)));
 
   // Presign independently — one TOS failure degrades to an empty url, never a 500.
   const imagesWithUrls = await Promise.all(
@@ -31,7 +31,7 @@ async function fetchAssetWithImages(id: number) {
 }
 
 // List payloads only render the cover image per asset (AssetCard picks
-// `images.find(id===coverImageId) ?? images[0]`). Returning every assetImages
+// `images.find(id===coverImageId) ?? images[0]`). Returning every media
 // row + presigning every URL inflates payloads and signs N URLs per card when
 // exactly one is needed. Detail fetches still go through `fetchAssetWithImages`
 // and keep the full image set.
@@ -55,22 +55,29 @@ async function fetchPageWithCoverImage(ids: number[]) {
 
   const [coverRows, fallbackRows] = await Promise.all([
     explicitCoverIds.length > 0
-      ? db.select().from(assetImages).where(inArray(assetImages.id, explicitCoverIds))
-      : Promise.resolve([] as (typeof assetImages.$inferSelect)[]),
+      ? db
+          .select()
+          .from(media)
+          .where(and(inArray(media.id, explicitCoverIds), isNull(media.deletedAt)))
+      : Promise.resolve([] as (typeof media.$inferSelect)[]),
     assetsWithoutCover.length > 0
       ? db
           .select()
-          .from(assetImages)
-          .where(inArray(assetImages.assetId, assetsWithoutCover))
-      : Promise.resolve([] as (typeof assetImages.$inferSelect)[]),
+          .from(media)
+          .where(and(inArray(media.assetId, assetsWithoutCover), isNull(media.deletedAt)))
+      : Promise.resolve([] as (typeof media.$inferSelect)[]),
   ]);
 
-  const coverByAssetId = new Map<number, typeof assetImages.$inferSelect>();
+  // These rows are asset-bound (cover/fallback for an asset), so assetId is
+  // non-null; the guard narrows the now-nullable column for the keyed lookups.
+  const coverByAssetId = new Map<number, typeof media.$inferSelect>();
   for (const img of coverRows) {
+    if (img.assetId === null) continue;
     coverByAssetId.set(img.assetId, img);
   }
   // Pick the lowest-id image per asset that lacks an explicit cover.
   for (const img of fallbackRows) {
+    if (img.assetId === null) continue;
     const existing = coverByAssetId.get(img.assetId);
     if (!existing || img.id < existing.id) coverByAssetId.set(img.assetId, img);
   }
@@ -82,7 +89,9 @@ async function fetchPageWithCoverImage(ids: number[]) {
   const imageWithUrlByAssetId = new Map<number, (typeof selected)[number] & { url: string }>();
   selected.forEach((img, i) => {
     const url = urls[i];
-    if (url !== undefined) imageWithUrlByAssetId.set(img.assetId, { ...img, url });
+    if (url !== undefined && img.assetId !== null) {
+      imageWithUrlByAssetId.set(img.assetId, { ...img, url });
+    }
   });
 
   // Preserve the order of ids (for cursor pagination ordering)
@@ -159,7 +168,9 @@ export const assetsRouter = t.router({
         if (filters.age?.length)
           conditions.push(inArray(sql<string>`(${assets.data}->>'age')`, filters.age));
         if (filters.scene_type?.length)
-          conditions.push(inArray(sql<string>`(${assets.data}->>'scene_type')`, filters.scene_type));
+          conditions.push(
+            inArray(sql<string>`(${assets.data}->>'scene_type')`, filters.scene_type),
+          );
         if (filters.mood?.length)
           conditions.push(inArray(sql<string>`(${assets.data}->>'mood')`, filters.mood));
         if (filters.category?.length)
@@ -175,7 +186,8 @@ export const assetsRouter = t.router({
 
       const hasMore = rows.length > LIMIT;
       const pageIds = rows.slice(0, LIMIT).map((r) => r.id);
-      const nextCursor = hasMore && pageIds.length > 0 ? (pageIds[pageIds.length - 1] ?? null) : null;
+      const nextCursor =
+        hasMore && pageIds.length > 0 ? (pageIds[pageIds.length - 1] ?? null) : null;
 
       const items = await fetchPageWithCoverImage(pageIds);
       return { items, nextCursor };
@@ -215,11 +227,7 @@ export const assetsRouter = t.router({
       if ('genre' in fields) updateSet.genre = fields.genre;
       if (fields.data !== undefined) updateSet.data = fields.data;
 
-      const [updated] = await db
-        .update(assets)
-        .set(updateSet)
-        .where(eq(assets.id, id))
-        .returning();
+      const [updated] = await db.update(assets).set(updateSet).where(eq(assets.id, id)).returning();
 
       if (!updated) throw new TRPCError({ code: 'NOT_FOUND' });
 
@@ -269,11 +277,15 @@ export const assetsRouter = t.router({
       }),
     )
     .mutation(async ({ input }) => {
-      const [asset] = await db.select({ id: assets.id }).from(assets).where(eq(assets.id, input.id)).limit(1);
+      const [asset] = await db
+        .select({ id: assets.id })
+        .from(assets)
+        .where(eq(assets.id, input.id))
+        .limit(1);
       if (!asset) throw new TRPCError({ code: 'NOT_FOUND' });
 
       const [img] = await db
-        .insert(assetImages)
+        .insert(media)
         .values({
           assetId: input.id,
           objectKey: input.objectKey,
@@ -290,15 +302,14 @@ export const assetsRouter = t.router({
   deleteImage: protectedProcedure
     .input(z.object({ imageId: z.number().int().positive() }))
     .mutation(async ({ input }) => {
+      // Soft delete — the row is flagged with deletedAt and the TOS object bytes
+      // are preserved so the file stays recoverable.
       const [deleted] = await db
-        .delete(assetImages)
-        .where(eq(assetImages.id, input.imageId))
-        .returning({ imageId: assetImages.id, objectKey: assetImages.objectKey });
+        .update(media)
+        .set({ deletedAt: new Date() })
+        .where(and(eq(media.id, input.imageId), isNull(media.deletedAt)))
+        .returning({ imageId: media.id });
       if (!deleted) throw new TRPCError({ code: 'NOT_FOUND' });
-      // Best-effort TOS cleanup — log on failure but do not fail the request
-      storage.deleteObject(deleted.objectKey).catch((err) =>
-        console.warn('TOS deleteObject failed for', deleted.objectKey, err),
-      );
       return { imageId: deleted.imageId };
     }),
 
@@ -312,16 +323,15 @@ export const assetsRouter = t.router({
     .mutation(async ({ input }) => {
       // Verify image belongs to this asset
       const [img] = await db
-        .select({ id: assetImages.id })
-        .from(assetImages)
-        .where(and(eq(assetImages.id, input.imageId), eq(assetImages.assetId, input.id)))
+        .select({ id: media.id })
+        .from(media)
+        .where(
+          and(eq(media.id, input.imageId), eq(media.assetId, input.id), isNull(media.deletedAt)),
+        )
         .limit(1);
       if (!img) throw new TRPCError({ code: 'NOT_FOUND', message: 'Image not found on asset' });
 
-      await db
-        .update(assets)
-        .set({ coverImageId: input.imageId })
-        .where(eq(assets.id, input.id));
+      await db.update(assets).set({ coverImageId: input.imageId }).where(eq(assets.id, input.id));
 
       const result = await fetchAssetWithImages(input.id);
       if (!result) throw new TRPCError({ code: 'NOT_FOUND' });

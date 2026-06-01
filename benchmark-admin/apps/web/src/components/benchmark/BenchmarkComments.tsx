@@ -29,9 +29,7 @@ export function BenchmarkComments({ itemId }: BenchmarkCommentsProps) {
   const add = trpc.benchmark.comments.add.useMutation({
     async onMutate(input: AddInput) {
       await utils.benchmark.comments.list.cancel({ itemId });
-      const previous = utils.benchmark.comments.list.getData({ itemId }) as
-        | Comment[]
-        | undefined;
+      const previous = utils.benchmark.comments.list.getData({ itemId }) as Comment[] | undefined;
       const tempId = nextTempId();
       const optimistic: Comment = {
         id: tempId,
@@ -39,6 +37,7 @@ export function BenchmarkComments({ itemId }: BenchmarkCommentsProps) {
         body: input.body,
         author: '我',
         createdAt: new Date(),
+        deletedAt: null,
       };
       utils.benchmark.comments.list.setData({ itemId }, (prev: Comment[] | undefined) => [
         ...(prev ?? []),
@@ -49,16 +48,10 @@ export function BenchmarkComments({ itemId }: BenchmarkCommentsProps) {
       // snapshot.
       return { tempId };
     },
-    onError(
-      _err: Error,
-      _input: AddInput,
-      ctx: { tempId: number } | undefined,
-    ) {
+    onError(_err: Error, _input: AddInput, ctx: { tempId: number } | undefined) {
       if (!ctx) return;
-      utils.benchmark.comments.list.setData(
-        { itemId },
-        (prev: Comment[] | undefined) =>
-          (prev ?? []).filter((c: Comment) => c.id !== ctx.tempId),
+      utils.benchmark.comments.list.setData({ itemId }, (prev: Comment[] | undefined) =>
+        (prev ?? []).filter((c: Comment) => c.id !== ctx.tempId),
       );
     },
     onSettled() {

@@ -21,16 +21,16 @@ export type MediaLinkOutType = z.infer<typeof MediaLinkOut>;
 export const BenchmarkComment = createSelectSchema(benchmarkItemComments);
 export type BenchmarkCommentType = z.infer<typeof BenchmarkComment>;
 
-// MediaBundleInput — the RF-2 cardinality enforcement point.
-// Single-cardinality roles (audioInputId, videoInputId, videoOutputId) accept at most one id.
+// MediaBundleInput — the inbound media wiring for an item.
+// All six roles are multi-cardinality (legacy accepts lists for audio/video too).
 // The service explodes this into video_benchmark_media_links rows.
 export const MediaBundleInput = z.object({
   characterImageIds: z.array(z.number()).default([]),
   sceneImageIds: z.array(z.number()).default([]),
   propImageIds: z.array(z.number()).default([]),
-  audioInputId: z.number().nullable().default(null),
-  videoInputId: z.number().nullable().default(null),
-  videoOutputId: z.number().nullable().default(null),
+  audioInputIds: z.array(z.number()).default([]),
+  videoInputIds: z.array(z.number()).default([]),
+  videoOutputIds: z.array(z.number()).default([]),
 });
 
 export type MediaBundleInputType = z.infer<typeof MediaBundleInput>;
@@ -40,9 +40,9 @@ export const MediaByRole = z.object({
   character_image: z.array(MediaLinkOut).default([]),
   scene_image: z.array(MediaLinkOut).default([]),
   prop_image: z.array(MediaLinkOut).default([]),
-  audio_input: MediaLinkOut.nullable().default(null),
-  video_input: MediaLinkOut.nullable().default(null),
-  video_output: MediaLinkOut.nullable().default(null),
+  audio_input: z.array(MediaLinkOut).default([]),
+  video_input: z.array(MediaLinkOut).default([]),
+  video_output: z.array(MediaLinkOut).default([]),
 });
 export type MediaByRoleType = z.infer<typeof MediaByRole>;
 

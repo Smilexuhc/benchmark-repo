@@ -13,10 +13,9 @@ import {
   text,
   timestamp,
   unique,
-  uniqueIndex,
 } from 'drizzle-orm/pg-core';
 
-// assets.cover_image_id → asset_images.id creates a circular reference.
+// assets.cover_image_id → media.id creates a circular reference.
 // The FK is declared with a callback so TypeScript resolves after both tables are defined.
 // The DEFERRABLE INITIALLY DEFERRED modifier is hand-appended to the generated migration SQL
 // (drizzle-kit emits a plain FK; deferral is required for the asset↔cover-image insert tx).
@@ -30,9 +29,9 @@ export const assets = pgTable(
     era: text('era'),
     genre: text('genre'),
     data: jsonb('data').notNull().default({}),
-    // FK → asset_images.id; DEFERRABLE INITIALLY DEFERRED added via migration SQL
+    // FK → media.id; DEFERRABLE INITIALLY DEFERRED added via migration SQL
     coverImageId: bigint('cover_image_id', { mode: 'number' }).references(
-      (): AnyPgColumn => assetImages.id,
+      (): AnyPgColumn => media.id,
       { onDelete: 'set null' },
     ),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -48,23 +47,30 @@ export const assets = pgTable(
   ],
 );
 
-export const assetImages = pgTable(
-  'asset_images',
+// media — a stored media file (image | audio | video) in object storage.
+// assetId is nullable: a file may belong to a character/scene/prop asset (assetId set)
+// or be a standalone upload used directly as a benchmark item's audio/video media (assetId NULL).
+// title holds the display name of a standalone file (asset-bound files take their name from the asset).
+// Soft-deleted via deletedAt — bytes in object storage are preserved for recovery.
+export const media = pgTable(
+  'media',
   {
     id: bigserial('id', { mode: 'number' }).primaryKey(),
-    assetId: bigint('asset_id', { mode: 'number' })
-      .notNull()
-      .references(() => assets.id, { onDelete: 'cascade' }),
+    assetId: bigint('asset_id', { mode: 'number' }).references(() => assets.id, {
+      onDelete: 'cascade',
+    }),
+    title: text('title').notNull().default(''),
     objectKey: text('object_key').notNull(),
     source: text('source').notNull().default('generated'),
     mediaType: text('media_type').notNull().default('image'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
   },
   (t) => [
-    check('chk_asset_images_media_type', sql`${t.mediaType} IN ('image', 'audio', 'video')`),
-    index('idx_asset_images_asset_id').on(t.assetId),
-    index('idx_asset_images_media_type').on(t.mediaType),
-    index('idx_asset_images_object_key').on(t.objectKey),
+    check('chk_media_media_type', sql`${t.mediaType} IN ('image', 'audio', 'video')`),
+    index('idx_media_asset_id').on(t.assetId),
+    index('idx_media_media_type').on(t.mediaType),
+    index('idx_media_object_key').on(t.objectKey),
   ],
 );
 
@@ -93,11 +99,11 @@ export const videoBenchmarkItems = pgTable(
   ],
 );
 
-// video_benchmark_media_links — single canonical media store (RF-2).
-// Two constraints are hand-appended to the migration SQL:
-// 1. UNIQUE(item_id, role, media_id) — same image can't fill the same role twice on one item
-// 2. Partial unique index: UNIQUE(item_id, role) WHERE role IN ('audio_input','video_input','video_output')
-//    — enforces single-cardinality for those three roles at the DB level
+// video_benchmark_media_links — the single canonical media store (RF-2).
+// A link is derived wiring between an item and a media file, not standalone content,
+// so it is hard-deleted (rebuilt transactionally on item update), not soft-deleted.
+// UNIQUE(item_id, role, media_id) prevents the same file filling the same role twice.
+// All six roles are multi-cardinality (legacy accepts lists for audio/video too).
 export const videoBenchmarkMediaLinks = pgTable(
   'video_benchmark_media_links',
   {
@@ -107,7 +113,7 @@ export const videoBenchmarkMediaLinks = pgTable(
       .references(() => videoBenchmarkItems.id, { onDelete: 'cascade' }),
     mediaId: bigint('media_id', { mode: 'number' })
       .notNull()
-      .references(() => assetImages.id, { onDelete: 'cascade' }),
+      .references(() => media.id, { onDelete: 'cascade' }),
     role: text('role').notNull(),
     sortOrder: integer('sort_order').notNull().default(0),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -120,11 +126,6 @@ export const videoBenchmarkMediaLinks = pgTable(
     unique('uq_media_links_item_role_media').on(t.itemId, t.role, t.mediaId),
     index('idx_media_links_item_role').on(t.itemId, t.role),
     index('idx_media_links_media').on(t.mediaId),
-    // Partial unique index: single-cardinality roles may appear at most once per item.
-    // Already present in 0000 migration SQL; expressed here so schema stays in sync.
-    uniqueIndex('idx_media_links_single_cardinality')
-      .on(t.itemId, t.role)
-      .where(sql`role IN ('audio_input', 'video_input', 'video_output')`),
   ],
 );
 
@@ -138,6 +139,7 @@ export const benchmarkItemComments = pgTable(
     author: text('author').notNull().default(''),
     body: text('body').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
   },
   (t) => [index('idx_bic_item_id_created').on(t.itemId, t.createdAt)],
 );
@@ -145,21 +147,22 @@ export const benchmarkItemComments = pgTable(
 // ── Relations ──────────────────────────────────────────────────────────────────
 
 export const assetsRelations = relations(assets, ({ one, many }) => ({
-  // one asset has many images (via asset_images.asset_id)
-  images: many(assetImages, { relationName: 'assetImages' }),
-  // cover image is a specific asset_images row (via assets.cover_image_id)
-  coverImage: one(assetImages, {
+  // one asset has many media files (via media.asset_id)
+  images: many(media, { relationName: 'assetMedia' }),
+  // cover image is a specific media row (via assets.cover_image_id)
+  coverImage: one(media, {
     fields: [assets.coverImageId],
-    references: [assetImages.id],
+    references: [media.id],
     relationName: 'assetCoverImage',
   }),
 }));
 
-export const assetImagesRelations = relations(assetImages, ({ one, many }) => ({
+export const mediaRelations = relations(media, ({ one, many }) => ({
+  // optional: standalone media files have no parent asset
   asset: one(assets, {
-    fields: [assetImages.assetId],
+    fields: [media.assetId],
     references: [assets.id],
-    relationName: 'assetImages',
+    relationName: 'assetMedia',
   }),
   mediaLinks: many(videoBenchmarkMediaLinks),
 }));
@@ -174,9 +177,9 @@ export const videoBenchmarkMediaLinksRelations = relations(videoBenchmarkMediaLi
     fields: [videoBenchmarkMediaLinks.itemId],
     references: [videoBenchmarkItems.id],
   }),
-  media: one(assetImages, {
+  media: one(media, {
     fields: [videoBenchmarkMediaLinks.mediaId],
-    references: [assetImages.id],
+    references: [media.id],
   }),
 }));
 

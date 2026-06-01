@@ -11,7 +11,7 @@ import { buildExportZip } from '@benchmark-admin/server/services/exports';
 import * as storage from '@benchmark-admin/server/services/storage';
 import { validateUpload } from '@benchmark-admin/server/services/upload';
 import {
-  assetImages,
+  media,
   videoBenchmarkItems,
   videoBenchmarkMediaLinks,
 } from '@benchmark-admin/shared/db/schema';
@@ -211,14 +211,14 @@ server.get<{
     itemIds.length > 0
       ? await db
           .select({
-            objectKey: assetImages.objectKey,
+            objectKey: media.objectKey,
             role: videoBenchmarkMediaLinks.role,
             itemId: videoBenchmarkMediaLinks.itemId,
-            mediaType: assetImages.mediaType,
+            mediaType: media.mediaType,
           })
           .from(videoBenchmarkMediaLinks)
-          .innerJoin(assetImages, eq(videoBenchmarkMediaLinks.mediaId, assetImages.id))
-          .where(inArray(videoBenchmarkMediaLinks.itemId, itemIds))
+          .innerJoin(media, eq(videoBenchmarkMediaLinks.mediaId, media.id))
+          .where(and(inArray(videoBenchmarkMediaLinks.itemId, itemIds), isNull(media.deletedAt)))
           .orderBy(videoBenchmarkMediaLinks.sortOrder)
       : [];
 

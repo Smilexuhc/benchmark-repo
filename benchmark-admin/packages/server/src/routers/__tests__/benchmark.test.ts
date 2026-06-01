@@ -53,9 +53,9 @@ const emptyMedia = {
   characterImageIds: [],
   sceneImageIds: [],
   propImageIds: [],
-  audioInputId: null,
-  videoInputId: null,
-  videoOutputId: null,
+  audioInputIds: [],
+  videoInputIds: [],
+  videoOutputIds: [],
 };
 
 describe('benchmarkRouter', () => {
@@ -78,11 +78,26 @@ describe('benchmarkRouter', () => {
 
   describe('create with media bundle → get', () => {
     it('creates item with mixed media and all links are present grouped by role', async () => {
-      const charImgId1 = await createImageAsset(caller, 'images/char1abc123def456789012345678901.png');
-      const charImgId2 = await createImageAsset(caller, 'images/char2abc123def456789012345678901.png');
-      const charImgId3 = await createImageAsset(caller, 'images/char3abc123def456789012345678901.png');
-      const sceneImgId = await createImageAsset(caller, 'images/sceneabc123def456789012345678901.png');
-      const videoOutId = await createImageAsset(caller, 'videos/outaabc123def456789012345678901.mp4');
+      const charImgId1 = await createImageAsset(
+        caller,
+        'images/char1abc123def456789012345678901.png',
+      );
+      const charImgId2 = await createImageAsset(
+        caller,
+        'images/char2abc123def456789012345678901.png',
+      );
+      const charImgId3 = await createImageAsset(
+        caller,
+        'images/char3abc123def456789012345678901.png',
+      );
+      const sceneImgId = await createImageAsset(
+        caller,
+        'images/sceneabc123def456789012345678901.png',
+      );
+      const videoOutId = await createImageAsset(
+        caller,
+        'videos/outaabc123def456789012345678901.mp4',
+      );
 
       const item = await caller.benchmark.create({
         shotType: 'close-up',
@@ -92,17 +107,17 @@ describe('benchmarkRouter', () => {
           characterImageIds: [charImgId1, charImgId2, charImgId3],
           sceneImageIds: [sceneImgId],
           propImageIds: [],
-          audioInputId: null,
-          videoInputId: null,
-          videoOutputId: videoOutId,
+          audioInputIds: [],
+          videoInputIds: [],
+          videoOutputIds: [videoOutId],
         },
       });
 
       expect(item.id).toBeTypeOf('number');
       expect(item.media.character_image.length).toBe(3);
       expect(item.media.scene_image.length).toBe(1);
-      expect(item.media.video_output).not.toBeNull();
-      expect(item.media.video_output?.mediaId).toBe(videoOutId);
+      expect(item.media.video_output.length).toBe(1);
+      expect(item.media.video_output[0]?.mediaId).toBe(videoOutId);
 
       // Verify via get
       const fetched = await caller.benchmark.get({ id: item.id });
@@ -150,9 +165,9 @@ describe('benchmarkRouter', () => {
           characterImageIds: [imgId, imgId, imgId], // 3× same id
           sceneImageIds: [],
           propImageIds: [],
-          audioInputId: null,
-          videoInputId: null,
-          videoOutputId: null,
+          audioInputIds: [],
+          videoInputIds: [],
+          videoOutputIds: [],
         },
       });
 
@@ -161,23 +176,33 @@ describe('benchmarkRouter', () => {
     });
   });
 
-  describe('RF-2 single-cardinality constraint', () => {
-    it('DB rejects a second audio_input for the same item (partial unique index)', async () => {
+  describe('media-link cardinality', () => {
+    it('allows multiple audio_inputs for the same item (single-cardinality index dropped)', async () => {
       const imgId1 = await createImageAsset(caller, 'audios/a1abc123def456789012345678901234.mp3');
       const imgId2 = await createImageAsset(caller, 'audios/a2abc123def456789012345678901234.mp3');
 
       const item = await caller.benchmark.create({
-        media: { ...emptyMedia, audioInputId: imgId1 },
+        media: { ...emptyMedia, audioInputIds: [imgId1, imgId2] },
       });
 
-      // Direct DB insert of a second audio_input should violate the partial unique index
+      expect(item.media.audio_input.length).toBe(2);
+    });
+
+    it('DB rejects the same file filling the same role twice (uq_media_links_item_role_media)', async () => {
+      const imgId = await createImageAsset(caller, 'audios/a3abc123def456789012345678901234.mp3');
+
+      const item = await caller.benchmark.create({
+        media: { ...emptyMedia, audioInputIds: [imgId] },
+      });
+
+      // Same (item_id, role, media_id) again violates the unique constraint.
       const { videoBenchmarkMediaLinks } = await import('@benchmark-admin/shared/db/schema');
       await expect(
         testDb.insert(videoBenchmarkMediaLinks).values({
           itemId: item.id,
-          mediaId: imgId2,
+          mediaId: imgId,
           role: 'audio_input',
-          sortOrder: 0,
+          sortOrder: 1,
         }),
       ).rejects.toThrow();
     });
@@ -200,7 +225,11 @@ describe('benchmarkRouter', () => {
         await caller.benchmark.create({ shotType: 'wide', questionType: 'qa', media: emptyMedia });
       }
       for (let i = 0; i < 2; i++) {
-        await caller.benchmark.create({ shotType: 'close', questionType: 'score', media: emptyMedia });
+        await caller.benchmark.create({
+          shotType: 'close',
+          questionType: 'score',
+          media: emptyMedia,
+        });
       }
 
       const { groups, todayNew } = await caller.benchmark.stats();
