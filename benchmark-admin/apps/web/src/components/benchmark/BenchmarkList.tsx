@@ -107,13 +107,13 @@ export function BenchmarkList() {
           ))}
         </Select>
         <Select
-          aria-label="题型"
+          aria-label="题目类型"
           value={state.questionType}
           onChange={(e) => setState({ questionType: e.target.value })}
           disabled={!state.shotType}
           className="max-w-[140px]"
         >
-          <option value="">题型</option>
+          <option value="">题目类型</option>
           {QUESTION_TYPES.map((q) => (
             <option key={q} value={q}>
               {q}
@@ -133,7 +133,7 @@ export function BenchmarkList() {
             导出 ZIP
           </Button>
           <Button size="sm" onClick={() => setDrawerId('new')}>
-            新建
+            新建题目
           </Button>
         </div>
       </div>
@@ -149,14 +149,14 @@ export function BenchmarkList() {
       <div className="grid grid-cols-[80px_1fr_1fr_2fr_140px_80px] gap-2 border-b border-[hsl(var(--border))] py-2 text-left text-xs text-[hsl(var(--muted-foreground))]">
         <div>ID</div>
         <div>镜头</div>
-        <div>题型</div>
+        <div>题目类型</div>
         <div>场景</div>
         <div>评分</div>
         <div />
       </div>
 
       {items.length === 0 && !list.isPending ? (
-        <div className="py-8 text-center text-sm text-[hsl(var(--muted-foreground))]">暂无结果</div>
+        <div className="py-8 text-center text-sm text-[hsl(var(--muted-foreground))]">没有符合条件的题目</div>
       ) : (
         <div ref={scrollRef} className="overflow-auto" style={{ height: SCROLL_AREA_HEIGHT }}>
           <div className="relative w-full" style={{ height: `${rowVirtualizer.getTotalSize()}px` }}>
@@ -178,11 +178,11 @@ export function BenchmarkList() {
                   <div className="truncate">{item.scene || '—'}</div>
                   <div className="flex items-center gap-1">
                     {item.score === null ? (
-                      <Badge variant="outline">未评</Badge>
+                      <Badge variant="outline">未评分</Badge>
                     ) : (
                       <Badge>{item.score}</Badge>
                     )}
-                    {item.needsRevision ? <Badge variant="destructive">需返工</Badge> : null}
+                    {item.needsRevision ? <Badge variant="destructive">待修改</Badge> : null}
                   </div>
                   <div className="text-right">
                     <Button size="sm" variant="outline" onClick={() => setDrawerId(item.id)}>
