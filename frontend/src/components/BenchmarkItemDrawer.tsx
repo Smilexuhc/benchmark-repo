@@ -196,6 +196,13 @@ function MediaThumb({ media }: { media: MediaAsset }) {
   )
 }
 
+function canRemoveFromItem(params: MediaAssetListParams) {
+  return (
+    params.media_type === 'image'
+    && ['character', 'scene', 'prop'].includes(params.asset_kind || '')
+  )
+}
+
 const FILTER_FIELDS_BY_KIND: Record<string, { field: string; label: string }[]> = {
   character: [
     { field: 'era', label: '时代' },
@@ -326,6 +333,11 @@ function MediaPicker({
     }
   }
 
+  const removeSelected = (mediaId: number) => {
+    onChange(selected.filter((media) => media.id !== mediaId))
+  }
+  const removable = canRemoveFromItem(params)
+
   return (
     <Field label={label}>
       <Space style={{ marginBottom: 8 }} wrap>
@@ -348,7 +360,38 @@ function MediaPicker({
         {selected.length === 0 && <span style={{ color: '#b8bdc4' }}>未选择</span>}
         {selected.map((media) => (
           <div key={media.id} style={{ width: 126 }}>
-            <MediaThumb media={media} />
+            <div style={{ position: 'relative', width: 80, height: 52 }}>
+              {removable && (
+                <Button
+                  aria-label="移除素材"
+                  title="移除素材"
+                  size="small"
+                  shape="circle"
+                  type="primary"
+                  danger
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    removeSelected(media.id)
+                  }}
+                  style={{
+                    position: 'absolute',
+                    top: -7,
+                    right: -7,
+                    zIndex: 2,
+                    width: 20,
+                    minWidth: 20,
+                    height: 20,
+                    padding: 0,
+                    lineHeight: '18px',
+                    fontSize: 14,
+                    boxShadow: '0 1px 5px rgba(0, 0, 0, 0.22)',
+                  }}
+                >
+                  ×
+                </Button>
+              )}
+              <MediaThumb media={media} />
+            </div>
             <div style={{ marginTop: 4, fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {mediaLabel(media)}
             </div>
