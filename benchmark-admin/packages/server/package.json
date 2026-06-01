@@ -3,14 +3,38 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts",
-    "./trpc": "./src/trpc/index.ts",
-    "./db": "./src/db/index.ts",
-    "./auth": "./src/auth/index.ts",
-    "./services/ai": "./src/services/ai/index.ts",
-    "./services/exports": "./src/services/exports/index.ts",
-    "./services/storage": "./src/services/storage/index.ts",
-    "./services/upload": "./src/services/upload/index.ts"
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./dist/index.js"
+    },
+    "./trpc": {
+      "types": "./src/trpc/index.ts",
+      "default": "./dist/trpc/index.js"
+    },
+    "./db": {
+      "types": "./src/db/index.ts",
+      "default": "./dist/db/index.js"
+    },
+    "./auth": {
+      "types": "./src/auth/index.ts",
+      "default": "./dist/auth/index.js"
+    },
+    "./services/ai": {
+      "types": "./src/services/ai/index.ts",
+      "default": "./dist/services/ai/index.js"
+    },
+    "./services/exports": {
+      "types": "./src/services/exports/index.ts",
+      "default": "./dist/services/exports/index.js"
+    },
+    "./services/storage": {
+      "types": "./src/services/storage/index.ts",
+      "default": "./dist/services/storage/index.js"
+    },
+    "./services/upload": {
+      "types": "./src/services/upload/index.ts",
+      "default": "./dist/services/upload/index.js"
+    }
   },
   "scripts": {
     "build": "tsc --build",

@@ -1,0 +1,51 @@
+# benchmark-admin app stack. It no longer binds host 80/443 — the shared Caddy
+# edge proxy (see ./edge) owns those and terminates TLS, then routes
+# benchmark-admin.jy-video.cn to the `admin-nginx` service over the `edge` network.
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: api
+    image: cr.volces.com/${CR_NAMESPACE}/benchmark-admin-api:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    env_file: .env.production
+    environment:
+      PORT: "3000"
+      NODE_ENV: production
+    expose:
+      - "3000"
+    networks:
+      - app
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://localhost:3000/api/trpc/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  admin-nginx:
+    build:
+      context: .
+      dockerfile: nginx/Dockerfile
+    image: cr.volces.com/${CR_NAMESPACE}/benchmark-admin-nginx:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    expose:
+      - "80"
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - app
+      - edge
+
+networks:
+  app:
+  edge:
+    external: true
