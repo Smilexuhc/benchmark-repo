@@ -24,14 +24,21 @@ export type BenchmarkCommentType = z.infer<typeof BenchmarkComment>;
 // MediaBundleInput — the inbound media wiring for an item.
 // All six roles are multi-cardinality (legacy accepts lists for audio/video too).
 // The service explodes this into video_benchmark_media_links rows.
-export const MediaBundleInput = z.object({
-  characterImageIds: z.array(z.number()).default([]),
-  sceneImageIds: z.array(z.number()).default([]),
-  propImageIds: z.array(z.number()).default([]),
-  audioInputIds: z.array(z.number()).default([]),
-  videoInputIds: z.array(z.number()).default([]),
-  videoOutputIds: z.array(z.number()).default([]),
-});
+// .strict() is load-bearing: update does delete-all-then-reinsert of links, so a
+// missing role silently resolves to [] and wipes that role's existing links. A
+// stale scalar key (e.g. legacy `audioInputId`) would be dropped by a non-strict
+// object, leaving `audioInputIds` at its [] default → data loss on every edit.
+// Rejecting unknown keys turns that class of client/contract drift into a loud error.
+export const MediaBundleInput = z
+  .object({
+    characterImageIds: z.array(z.number()).default([]),
+    sceneImageIds: z.array(z.number()).default([]),
+    propImageIds: z.array(z.number()).default([]),
+    audioInputIds: z.array(z.number()).default([]),
+    videoInputIds: z.array(z.number()).default([]),
+    videoOutputIds: z.array(z.number()).default([]),
+  })
+  .strict();
 
 export type MediaBundleInputType = z.infer<typeof MediaBundleInput>;
 

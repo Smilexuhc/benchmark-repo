@@ -15,6 +15,7 @@ const MIGRATION_FILES = [
   '0000_same_ma_gnuci.sql',
   '0001_add_comment_index.sql',
   '0002_decouple_media.sql',
+  '0003_soft_delete_indexes.sql',
 ];
 
 type TestDb = ReturnType<typeof drizzle<typeof schema>>;

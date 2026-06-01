@@ -219,6 +219,70 @@ describe('benchmarkRouter', () => {
     });
   });
 
+  describe('audio/video edit round-trip (Gap A)', () => {
+    it('update re-sending the audio/video arrays preserves the links', async () => {
+      const audioId = await createImageAsset(caller, 'audios/edit-a-123456789012345678901234.mp3');
+      const videoId = await createImageAsset(caller, 'videos/edit-v-123456789012345678901234.mp4');
+
+      const item = await caller.benchmark.create({
+        shotType: 'edit-rt',
+        media: { ...emptyMedia, audioInputIds: [audioId], videoOutputIds: [videoId] },
+      });
+      expect(item.media.audio_input.length).toBe(1);
+      expect(item.media.video_output.length).toBe(1);
+
+      // Edit a scalar field, re-sending the same media bundle (what the fixed
+      // drawer does). The links must survive the delete-all-then-reinsert.
+      const updated = await caller.benchmark.update({
+        id: item.id,
+        shotType: 'edit-rt-2',
+        media: { ...emptyMedia, audioInputIds: [audioId], videoOutputIds: [videoId] },
+      });
+      expect(updated.media.audio_input.map((l: { mediaId: number }) => l.mediaId)).toEqual([
+        audioId,
+      ]);
+      expect(updated.media.video_output.map((l: { mediaId: number }) => l.mediaId)).toEqual([
+        videoId,
+      ]);
+    });
+
+    it('MediaBundleInput rejects an unknown scalar key (strict guard)', async () => {
+      // The pre-fix drawer sent scalar `audioInputId`; a non-strict object would
+      // silently drop it, defaulting audioInputIds to [] and wiping links. strict
+      // turns that contract drift into a loud rejection instead of data loss.
+      await expect(
+        caller.benchmark.create({
+          shotType: 'strict-test',
+          media: { ...emptyMedia, audioInputId: 999 },
+        }),
+      ).rejects.toThrow();
+    });
+  });
+
+  describe('parent-derived media visibility (Gap B)', () => {
+    it('hides an item link whose media parent asset was soft-deleted', async () => {
+      const asset = await caller.assets.create({ kind: 'character', name: 'LinkAsset', data: {} });
+      const img = await caller.assets.attachImage({
+        id: asset.id,
+        objectKey: 'images/link-parent-123456789012345678901234.png',
+        source: 'uploaded',
+      });
+
+      const item = await caller.benchmark.create({
+        shotType: 'parent-vis',
+        media: { ...emptyMedia, characterImageIds: [img.id] },
+      });
+      expect(item.media.character_image.length).toBe(1);
+
+      // Soft-deleting the parent asset must hide the still-alive media row (and
+      // thus the link) via parent-derived visibility — the dormant cascade.
+      await caller.assets.delete({ id: asset.id });
+
+      const fetched = await caller.benchmark.get({ id: item.id });
+      expect(fetched.media.character_image.length).toBe(0);
+    });
+  });
+
   describe('stats', () => {
     it('returns group counts by shot_type × question_type and todayNew', async () => {
       for (let i = 0; i < 2; i++) {

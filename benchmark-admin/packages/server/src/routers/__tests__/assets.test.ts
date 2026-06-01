@@ -184,6 +184,32 @@ describe('assetsRouter', () => {
       expect(withCover.images.length).toBe(2);
     });
 
+    it('soft-deleting the cover nulls the pointer and list falls back to next alive image (Gap B)', async () => {
+      const asset = await caller.assets.create({ kind: 'character', name: 'CoverDelTest', data: {} });
+      const img1 = await caller.assets.attachImage({
+        id: asset.id,
+        objectKey: 'images/cover-del-1-abc123def456789012345678901234.png',
+        source: 'uploaded',
+      });
+      const img2 = await caller.assets.attachImage({
+        id: asset.id,
+        objectKey: 'images/cover-del-2-abc123def456789012345678901234.png',
+        source: 'uploaded',
+      });
+      await caller.assets.setCover({ id: asset.id, imageId: img2.id });
+
+      // Soft-delete the explicit cover. The dangling pointer must be nulled so the
+      // card derives a fallback instead of rendering blank.
+      await caller.assets.deleteImage({ imageId: img2.id });
+
+      const { items } = await caller.assets.list({ kind: 'character' });
+      const listed = items.find((i: { id: number }) => i.id === asset.id);
+      expect(listed).toBeDefined();
+      expect(listed.coverImageId).toBeNull();
+      expect(listed.images).toHaveLength(1);
+      expect(listed.images[0].id).toBe(img1.id);
+    });
+
     it('deleteImage soft-deletes the image and preserves the TOS object bytes', async () => {
       const asset = await caller.assets.create({ kind: 'prop', name: 'DelImgProp', data: {} });
       const img = await caller.assets.attachImage({

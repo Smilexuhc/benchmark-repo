@@ -44,6 +44,10 @@ export const assets = pgTable(
     index('idx_assets_kind_deleted').on(t.kind, t.deletedAt),
     index('idx_assets_kind_era').on(t.kind, t.era),
     index('idx_assets_kind_genre').on(t.kind, t.genre),
+    // softDeleteMedia nulls every cover pointing at the deleted file
+    // (UPDATE assets SET cover_image_id = NULL WHERE cover_image_id = $1),
+    // standing in for the dormant cover_image_id → SET NULL FK. Index that lookup.
+    index('idx_assets_cover_image_id').on(t.coverImageId),
   ],
 );
 
@@ -71,6 +75,10 @@ export const media = pgTable(
     index('idx_media_asset_id').on(t.assetId),
     index('idx_media_media_type').on(t.mediaType),
     index('idx_media_object_key').on(t.objectKey),
+    // Hot path: asset detail + library cover derivation scan a single asset's
+    // (or a page's) ALIVE media by asset_id. Partial-on-alive keeps soft-deleted
+    // rows out of the index so the scan matches the deleted_at IS NULL filter.
+    index('idx_media_asset_active').on(t.assetId).where(sql`${t.deletedAt} IS NULL`),
   ],
 );
 
@@ -141,7 +149,12 @@ export const benchmarkItemComments = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
   },
-  (t) => [index('idx_bic_item_id_created').on(t.itemId, t.createdAt)],
+  (t) => [
+    index('idx_bic_item_id_created').on(t.itemId, t.createdAt),
+    // fetchItemWithMedia reads an item's ALIVE comments ordered by created_at.
+    // Partial-on-alive matches the deleted_at IS NULL filter and orders for free.
+    index('idx_bic_active').on(t.itemId, t.createdAt).where(sql`${t.deletedAt} IS NULL`),
+  ],
 );
 
 // ── Relations ──────────────────────────────────────────────────────────────────

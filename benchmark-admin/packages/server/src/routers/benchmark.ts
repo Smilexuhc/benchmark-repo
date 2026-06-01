@@ -13,6 +13,7 @@ import { TRPCError } from '@trpc/server';
 import { type SQL, and, desc, eq, gte, inArray, isNotNull, isNull, lt, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../db/index.js';
+import { mediaVisible } from '../db/soft-delete.js';
 import * as storage from '../services/storage/index.js';
 import { t } from '../trpc/init.js';
 import { protectedProcedure } from '../trpc/procedures.js';
@@ -102,10 +103,10 @@ async function fetchItemWithMedia(id: number) {
       const [mediaRow] = await db
         .select()
         .from(media)
-        .where(and(eq(media.id, link.mediaId), isNull(media.deletedAt)))
+        .where(and(eq(media.id, link.mediaId), mediaVisible()))
         .limit(1);
-      // A soft-deleted media file yields no row; skip the link rather than
-      // surfacing a dangling reference.
+      // An invisible media file (own soft-delete OR a soft-deleted parent asset)
+      // yields no row; skip the link rather than surfacing a dangling reference.
       if (!mediaRow) return;
       const url = await storage.getPresignedUrl(mediaRow.objectKey).catch(() => '');
       const linkOut: MediaLinkOutType = { ...link, url };

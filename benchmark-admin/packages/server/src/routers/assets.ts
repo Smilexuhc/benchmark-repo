@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { assets, media } from '@benchmark-admin/shared/db/schema';
 import { AssetInsert, AssetUpdate } from '@benchmark-admin/shared/schemas/assets';
 import { db } from '../db/index.js';
+import { softDeleteMedia } from '../db/soft-delete.js';
 import * as storage from '../services/storage/index.js';
 import { t } from '../trpc/init.js';
 import { protectedProcedure } from '../trpc/procedures.js';
@@ -40,46 +41,44 @@ async function fetchPageWithCoverImage(ids: number[]) {
 
   const assetRows = await db.select().from(assets).where(inArray(assets.id, ids));
 
-  // Bucket asset ids by whether they have an explicit cover; the cover-less
-  // fallback is "lowest image id for the asset" (matches the AssetCard fallback
-  // `images[0]` once images are sorted by id ascending).
-  const explicitCoverIds: number[] = [];
-  const assetsWithoutCover: number[] = [];
+  // Single-pass derived cover. Fetch every alive image for the page's assets in
+  // one query (id ascending), then per asset choose: the explicit cover if it is
+  // still alive, otherwise the lowest-id alive image (matches AssetCard's
+  // `images[0]` fallback). Deriving from the live set — rather than bucketing on
+  // coverImageId up front — is what fixes the soft-deleted-cover blank card: a
+  // dangling cover pointer no longer suppresses the fallback, because we never
+  // trust the pointer without confirming the row is alive.
+  const imageRows =
+    assetRows.length > 0
+      ? await db
+          .select()
+          .from(media)
+          .where(and(inArray(media.assetId, ids), isNull(media.deletedAt)))
+          .orderBy(media.id)
+      : [];
+
+  const coverPointerByAssetId = new Map<number, number>();
   for (const a of assetRows) {
     if (a.coverImageId !== null && a.coverImageId !== undefined) {
-      explicitCoverIds.push(a.coverImageId);
-    } else {
-      assetsWithoutCover.push(a.id);
+      coverPointerByAssetId.set(a.id, a.coverImageId);
     }
   }
 
-  const [coverRows, fallbackRows] = await Promise.all([
-    explicitCoverIds.length > 0
-      ? db
-          .select()
-          .from(media)
-          .where(and(inArray(media.id, explicitCoverIds), isNull(media.deletedAt)))
-      : Promise.resolve([] as (typeof media.$inferSelect)[]),
-    assetsWithoutCover.length > 0
-      ? db
-          .select()
-          .from(media)
-          .where(and(inArray(media.assetId, assetsWithoutCover), isNull(media.deletedAt)))
-      : Promise.resolve([] as (typeof media.$inferSelect)[]),
-  ]);
-
-  // These rows are asset-bound (cover/fallback for an asset), so assetId is
-  // non-null; the guard narrows the now-nullable column for the keyed lookups.
+  // imageRows are asset-bound (queried by media.assetId) and ordered by id asc,
+  // so assetId is non-null and the first row seen per asset is its lowest-id
+  // alive image. An alive image matching the explicit cover pointer always wins;
+  // otherwise the lowest-id alive image is the fallback. Iterating ascending,
+  // a later (higher-id) row can never displace either choice.
   const coverByAssetId = new Map<number, typeof media.$inferSelect>();
-  for (const img of coverRows) {
+  for (const img of imageRows) {
     if (img.assetId === null) continue;
-    coverByAssetId.set(img.assetId, img);
-  }
-  // Pick the lowest-id image per asset that lacks an explicit cover.
-  for (const img of fallbackRows) {
-    if (img.assetId === null) continue;
+    const pointer = coverPointerByAssetId.get(img.assetId);
     const existing = coverByAssetId.get(img.assetId);
-    if (!existing || img.id < existing.id) coverByAssetId.set(img.assetId, img);
+    if (pointer !== undefined && img.id === pointer) {
+      coverByAssetId.set(img.assetId, img); // explicit cover, still alive → wins
+    } else if (!existing) {
+      coverByAssetId.set(img.assetId, img); // first (lowest-id) alive fallback
+    }
   }
 
   const selected = [...coverByAssetId.values()];
@@ -302,15 +301,13 @@ export const assetsRouter = t.router({
   deleteImage: protectedProcedure
     .input(z.object({ imageId: z.number().int().positive() }))
     .mutation(async ({ input }) => {
-      // Soft delete — the row is flagged with deletedAt and the TOS object bytes
-      // are preserved so the file stays recoverable.
-      const [deleted] = await db
-        .update(media)
-        .set({ deletedAt: new Date() })
-        .where(and(eq(media.id, input.imageId), isNull(media.deletedAt)))
-        .returning({ imageId: media.id });
-      if (!deleted) throw new TRPCError({ code: 'NOT_FOUND' });
-      return { imageId: deleted.imageId };
+      // Soft delete (deletedAt set, TOS bytes preserved for recovery) plus the
+      // referential reconciliation a physical DELETE used to do via FK rules:
+      // null any asset cover pointing here, hard-delete derived links. All in one
+      // transaction so a half-applied delete can't leave a dangling cover/link.
+      const imageId = await db.transaction((tx) => softDeleteMedia(tx, input.imageId));
+      if (imageId === null) throw new TRPCError({ code: 'NOT_FOUND' });
+      return { imageId };
     }),
 
   setCover: protectedProcedure

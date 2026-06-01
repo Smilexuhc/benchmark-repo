@@ -1,7 +1,8 @@
-import { type SQL, and, desc, eq, isNull, lt, sql } from 'drizzle-orm';
+import { type SQL, and, desc, eq, lt, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { assets, media } from '@benchmark-admin/shared/db/schema';
 import { db } from '../db/index.js';
+import { mediaVisible } from '../db/soft-delete.js';
 import * as storage from '../services/storage/index.js';
 import { t } from '../trpc/init.js';
 import { protectedProcedure } from '../trpc/procedures.js';
@@ -40,10 +41,12 @@ export const mediaAssetsRouter = t.router({
       }),
     )
     .query(async ({ input }) => {
-      // Soft-deleted media never surfaces. A kind filter constrains assets.kind,
-      // which (under the LEFT JOIN) also excludes standalone media (asset_id NULL)
-      // — intended, since a standalone file has no asset taxonomy to match.
-      const joinConditions: SQL[] = [isNull(media.deletedAt)];
+      // mediaVisible() hides a file whose own deleted_at is set OR whose parent
+      // asset was soft-deleted (the dormant asset_id cascade, re-homed in app
+      // code). A kind filter constrains assets.kind, which (under the LEFT JOIN)
+      // also excludes standalone media (asset_id NULL) — intended, since a
+      // standalone file has no asset taxonomy to match.
+      const joinConditions: SQL[] = [mediaVisible()];
       if (input.kind) joinConditions.push(eq(assets.kind, input.kind));
       if (input.mediaType) joinConditions.push(eq(media.mediaType, input.mediaType));
       if (input.cursor) joinConditions.push(lt(media.id, input.cursor));
@@ -75,7 +78,10 @@ export const mediaAssetsRouter = t.router({
               a.kind         AS "assetKind"
             FROM media ai
             LEFT JOIN assets a ON a.id = ai.asset_id
-            WHERE ai.deleted_at IS NULL${kindClause}${mtClause}
+            WHERE ai.deleted_at IS NULL
+              -- inlined mediaVisible(): hide media whose parent asset is soft-deleted
+              -- (standalone media has asset_id NULL → the LEFT JOIN yields a.* NULL → kept)
+              AND (ai.asset_id IS NULL OR a.deleted_at IS NULL)${kindClause}${mtClause}
             ORDER BY ai.object_key, ai.id
           ) dedup
           ${cursorClause}

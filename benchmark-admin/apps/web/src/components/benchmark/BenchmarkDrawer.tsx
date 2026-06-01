@@ -53,18 +53,18 @@ type Media = {
   characterImageIds: number[];
   sceneImageIds: number[];
   propImageIds: number[];
-  audioInputId: number | null;
-  videoInputId: number | null;
-  videoOutputId: number | null;
+  audioInputIds: number[];
+  videoInputIds: number[];
+  videoOutputIds: number[];
 };
 
 const EMPTY_MEDIA: Media = {
   characterImageIds: [],
   sceneImageIds: [],
   propImageIds: [],
-  audioInputId: null,
-  videoInputId: null,
-  videoOutputId: null,
+  audioInputIds: [],
+  videoInputIds: [],
+  videoOutputIds: [],
 };
 
 export type BenchmarkDrawerProps = {
@@ -116,9 +116,9 @@ export function BenchmarkDrawer({ id, onClose, onSaved }: BenchmarkDrawerProps) 
           characterImageIds: get.data.media.character_image.map((l: MediaLink) => l.mediaId),
           sceneImageIds: get.data.media.scene_image.map((l: MediaLink) => l.mediaId),
           propImageIds: get.data.media.prop_image.map((l: MediaLink) => l.mediaId),
-          audioInputId: get.data.media.audio_input?.mediaId ?? null,
-          videoInputId: get.data.media.video_input?.mediaId ?? null,
-          videoOutputId: get.data.media.video_output?.mediaId ?? null,
+          audioInputIds: get.data.media.audio_input.map((l: MediaLink) => l.mediaId),
+          videoInputIds: get.data.media.video_input.map((l: MediaLink) => l.mediaId),
+          videoOutputIds: get.data.media.video_output.map((l: MediaLink) => l.mediaId),
         });
       }
     }
@@ -135,9 +135,9 @@ export function BenchmarkDrawer({ id, onClose, onSaved }: BenchmarkDrawerProps) 
     media.characterImageIds.length > 0 ||
     media.sceneImageIds.length > 0 ||
     media.propImageIds.length > 0 ||
-    media.audioInputId !== null ||
-    media.videoInputId !== null ||
-    media.videoOutputId !== null;
+    media.audioInputIds.length > 0 ||
+    media.videoInputIds.length > 0 ||
+    media.videoOutputIds.length > 0;
   const missing: string[] = [];
   if (!textPrompt.trim()) missing.push('文本提示词');
   if (!judgingCriteria.trim()) missing.push('评判标准');
@@ -257,20 +257,20 @@ export function BenchmarkDrawer({ id, onClose, onSaved }: BenchmarkDrawerProps) 
           <MediaPicker
             label="音频输入"
             mediaType="audio"
-            selectedIds={media.audioInputId !== null ? [media.audioInputId] : []}
-            onChange={(ids) => setMedia((m) => ({ ...m, audioInputId: ids[0] ?? null }))}
+            selectedIds={media.audioInputIds}
+            onChange={(ids) => setMedia((m) => ({ ...m, audioInputIds: ids }))}
           />
           <MediaPicker
             label="视频输入"
             mediaType="video"
-            selectedIds={media.videoInputId !== null ? [media.videoInputId] : []}
-            onChange={(ids) => setMedia((m) => ({ ...m, videoInputId: ids[0] ?? null }))}
+            selectedIds={media.videoInputIds}
+            onChange={(ids) => setMedia((m) => ({ ...m, videoInputIds: ids }))}
           />
           <MediaPicker
             label="视频输出"
             mediaType="video"
-            selectedIds={media.videoOutputId !== null ? [media.videoOutputId] : []}
-            onChange={(ids) => setMedia((m) => ({ ...m, videoOutputId: ids[0] ?? null }))}
+            selectedIds={media.videoOutputIds}
+            onChange={(ids) => setMedia((m) => ({ ...m, videoOutputIds: ids }))}
           />
         </section>
 
