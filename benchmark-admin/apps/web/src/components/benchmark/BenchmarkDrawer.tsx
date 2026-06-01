@@ -9,8 +9,8 @@ import {
 } from '@benchmark-admin/shared/constants/question-types';
 import { Button } from '@/components/ui/button';
 import { Drawer } from '@/components/ui/drawer';
-import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
+import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { type RouterOutputs, trpc } from '@/lib/trpc';
 
@@ -18,6 +18,10 @@ type MediaLink = RouterOutputs['benchmark']['get']['media']['character_image'][n
 import { Field } from '@/components/drawers/shared/Field';
 import { BenchmarkComments } from './BenchmarkComments';
 import { MediaPicker } from './MediaPicker';
+
+const SCENE_OPTIONS = ['电影 / 预告片', '短剧 / 剧情片段', '动画 / 风格化内容'] as const;
+const SCREEN_SIZE_OPTIONS = ['16:9', '9:16', '2.39:1'] as const;
+const SCORE_OPTIONS = [null, 0, 1, 2, 3, 4, 5] as const;
 
 const FormSchema = z.object({
   shotType: z.string(),
@@ -79,6 +83,8 @@ export function BenchmarkDrawer({ id, onClose, onSaved }: BenchmarkDrawerProps) 
   const get = trpc.benchmark.get.useQuery({ id }, { enabled: !isNew });
   const create = trpc.benchmark.create.useMutation();
   const update = trpc.benchmark.update.useMutation();
+  const deleteMutation = trpc.benchmark.delete.useMutation();
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(FormSchema),
@@ -125,6 +131,7 @@ export function BenchmarkDrawer({ id, onClose, onSaved }: BenchmarkDrawerProps) 
   }, [isNew, id, get.data, form]);
 
   const shotType = form.watch('shotType');
+  const scoreValue = form.watch('score');
 
   // Non-blocking completeness feedback: the product wants curated items, but an
   // unscored / incomplete item is a valid in-progress state, so we surface an
@@ -139,7 +146,7 @@ export function BenchmarkDrawer({ id, onClose, onSaved }: BenchmarkDrawerProps) 
     media.videoInputId !== null ||
     media.videoOutputId !== null;
   const missing: string[] = [];
-  if (!textPrompt.trim()) missing.push('文本提示词');
+  if (!textPrompt.trim()) missing.push('文字提示词');
   if (!judgingCriteria.trim()) missing.push('评判标准');
   if (!hasAnyMedia) missing.push('媒体');
 
@@ -157,8 +164,17 @@ export function BenchmarkDrawer({ id, onClose, onSaved }: BenchmarkDrawerProps) 
     onSaved();
   };
 
+  async function handleDelete() {
+    await deleteMutation.mutateAsync({ id });
+    await Promise.all([
+      utils.benchmark.list.invalidate(),
+      utils.benchmark.stats.invalidate(),
+    ]);
+    onClose();
+  }
+
   return (
-    <Drawer open onClose={onClose} title={isNew ? '新建评测' : '编辑评测'} widthClassName="w-[720px] max-w-full">
+    <Drawer open onClose={onClose} title={isNew ? '新建题目' : `编辑题目 #${id}`} widthClassName="w-[720px] max-w-full">
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4" noValidate>
         {missing.length > 0 ? (
           <div
@@ -168,7 +184,7 @@ export function BenchmarkDrawer({ id, onClose, onSaved }: BenchmarkDrawerProps) 
             缺少: {missing.join(' / ')}（可继续保存为草稿）
           </div>
         ) : null}
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 gap-3">
           <Field label="镜头类型">
             <Select {...form.register('shotType')}>
               <option value="">—</option>
@@ -179,17 +195,7 @@ export function BenchmarkDrawer({ id, onClose, onSaved }: BenchmarkDrawerProps) 
               ))}
             </Select>
           </Field>
-          <Field label="任务类型">
-            <Select {...form.register('taskType')}>
-              <option value="">—</option>
-              {TASK_TYPES.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          <Field label="题型">
+          <Field label="题目类型">
             <Select {...form.register('questionType')} disabled={!shotType}>
               <option value="">—</option>
               {QUESTION_TYPES.map((q) => (
@@ -202,36 +208,61 @@ export function BenchmarkDrawer({ id, onClose, onSaved }: BenchmarkDrawerProps) 
         </div>
 
         <div className="grid grid-cols-2 gap-3">
-          <Field label="手工标签">
+          <Field label="测试点人工标注">
             <Input {...form.register('manualTag')} />
           </Field>
           <Field label="屏幕尺寸">
-            <Input {...form.register('screenSize')} />
+            <Select {...form.register('screenSize')}>
+              <option value="">—</option>
+              {SCREEN_SIZE_OPTIONS.map((v) => (
+                <option key={v} value={v}>{v}</option>
+              ))}
+            </Select>
           </Field>
         </div>
         <Field label="场景">
-          <Input {...form.register('scene')} />
+          <Select {...form.register('scene')}>
+            <option value="">—</option>
+            {SCENE_OPTIONS.map((v) => (
+              <option key={v} value={v}>{v}</option>
+            ))}
+          </Select>
         </Field>
-        <Field label="文本 Prompt">
+        <Field label="文字提示词">
           <Textarea rows={3} {...form.register('textPrompt')} />
         </Field>
-        <Field label="评分标准">
+        <Field label="评判标准">
           <Textarea rows={2} {...form.register('judgingCriteria')} />
         </Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label="评分（0–5）">
-            <Input type="number" min={0} max={5} {...form.register('score')} />
+            <div className="flex gap-1">
+              {SCORE_OPTIONS.map((v) => (
+                <button
+                  key={v ?? 'null'}
+                  type="button"
+                  onClick={() => form.setValue('score', v as FormValues['score'], { shouldDirty: true })}
+                  className={`flex-1 rounded border px-1 py-1 text-xs font-medium transition-colors ${
+                    scoreValue === v
+                      ? 'border-[hsl(var(--primary))] bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))]'
+                      : 'border-[hsl(var(--border))] bg-[hsl(var(--background))] text-[hsl(var(--foreground))] hover:bg-[hsl(var(--muted))]'
+                  }`}
+                >
+                  {v === null ? '—' : v}
+                </button>
+              ))}
+            </div>
           </Field>
           <label className="mt-6 flex items-center gap-2 text-sm">
             <input type="checkbox" className="h-4 w-4" {...form.register('needsRevision')} />
-            需要返工
+            待修改
           </label>
         </div>
 
         <section aria-label="媒体" className="space-y-3 rounded-md border border-[hsl(var(--border))] p-3">
           <h3 className="text-sm font-semibold">媒体绑定</h3>
           <MediaPicker
-            label="角色图"
+            label="人物图片素材"
             mediaType="image"
             assetKind="character"
             multi
@@ -239,7 +270,7 @@ export function BenchmarkDrawer({ id, onClose, onSaved }: BenchmarkDrawerProps) 
             onChange={(ids) => setMedia((m) => ({ ...m, characterImageIds: ids }))}
           />
           <MediaPicker
-            label="场景图"
+            label="场景图片素材"
             mediaType="image"
             assetKind="scene"
             multi
@@ -247,7 +278,7 @@ export function BenchmarkDrawer({ id, onClose, onSaved }: BenchmarkDrawerProps) 
             onChange={(ids) => setMedia((m) => ({ ...m, sceneImageIds: ids }))}
           />
           <MediaPicker
-            label="道具图"
+            label="道具图片素材"
             mediaType="image"
             assetKind="prop"
             multi
@@ -276,14 +307,51 @@ export function BenchmarkDrawer({ id, onClose, onSaved }: BenchmarkDrawerProps) 
 
         {!isNew ? <BenchmarkComments itemId={id} /> : null}
 
-        <footer className="flex items-center justify-end gap-2 border-t border-[hsl(var(--border))] pt-3">
-          <Button type="button" variant="outline" onClick={onClose}>取消</Button>
-          <Button type="submit" disabled={form.formState.isSubmitting}>
-            {form.formState.isSubmitting ? '保存中…' : '保存'}
-          </Button>
+        <footer className="flex items-center justify-between border-t border-[hsl(var(--border))] pt-3">
+          {!isNew ? (
+            confirmDelete ? (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-[hsl(var(--destructive))]">确认删除题目？</span>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="destructive"
+                  disabled={deleteMutation.isPending}
+                  onClick={handleDelete}
+                >
+                  {deleteMutation.isPending ? '删除中…' : '确认删除'}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setConfirmDelete(false)}
+                >
+                  取消
+                </Button>
+              </div>
+            ) : (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="text-[hsl(var(--destructive))] hover:bg-[hsl(var(--destructive))] hover:text-[hsl(var(--destructive-foreground))]"
+                onClick={() => setConfirmDelete(true)}
+              >
+                删除题目
+              </Button>
+            )
+          ) : (
+            <div />
+          )}
+          <div className="flex gap-2">
+            <Button type="button" variant="outline" onClick={onClose}>关闭</Button>
+            <Button type="submit" disabled={form.formState.isSubmitting}>
+              {form.formState.isSubmitting ? '保存中…' : isNew ? '创建' : '保存'}
+            </Button>
+          </div>
         </footer>
       </form>
     </Drawer>
   );
 }
-

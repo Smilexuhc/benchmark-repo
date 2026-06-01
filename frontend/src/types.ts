@@ -87,6 +87,7 @@ export interface VideoBenchmarkItem {
   task_type: string
   question_type: string
   manual_tag: string
+  difficulty: string
   scene: string
   screen_size: string
   character_image_asset: string
@@ -138,7 +139,7 @@ export interface BenchmarkComment {
 
 export type VideoBenchmarkItemInput = Pick<
   VideoBenchmarkItem,
-  | 'shot_type' | 'task_type' | 'question_type' | 'manual_tag' | 'scene' | 'screen_size'
+  | 'shot_type' | 'task_type' | 'question_type' | 'manual_tag' | 'difficulty' | 'scene' | 'screen_size'
   | 'character_image_asset' | 'scene_image_asset' | 'prop_image_asset'
   | 'audio_input' | 'video_input' | 'text_prompt' | 'judging_criteria' | 'video_output' | 'score'
   | 'character_image_id' | 'scene_image_id' | 'prop_image_id' | 'audio_input_id'
@@ -188,6 +189,7 @@ export interface VideoBenchmarkListParams {
   screen_size?: string
   score?: number | null
   manual_tag?: string
+  difficulty?: string
   needs_revision?: boolean
   has_comments?: boolean
 }
@@ -222,6 +224,7 @@ export const FIELD_LABELS: Record<string, string> = {
   task_type: '任务类型',
   question_type: '题目类型',
   manual_tag: '测试点人工标注',
+  difficulty: '难度',
   scene: '场景',
   screen_size: '屏幕尺寸',
   character_image_asset: '人物图片素材',
@@ -260,6 +263,7 @@ export const emptyVideoBenchmarkItem: VideoBenchmarkItemInput = {
   task_type: '',
   question_type: '',
   manual_tag: '',
+  difficulty: '',
   scene: '',
   screen_size: '',
   character_image_asset: '',
