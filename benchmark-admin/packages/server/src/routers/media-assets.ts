@@ -158,7 +158,7 @@ export const mediaAssetsRouter = t.router({
       if (!asset) throw new Error('Failed to create asset');
 
       const [img] = await db
-        .insert(assetImages)
+        .insert(media)
         .values({
           assetId: asset.id,
           objectKey: input.objectKey,

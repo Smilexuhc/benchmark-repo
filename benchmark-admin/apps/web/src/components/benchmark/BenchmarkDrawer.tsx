@@ -177,12 +177,9 @@ export function BenchmarkDrawer({ id, onClose, onSaved }: BenchmarkDrawerProps) 
     <Drawer open onClose={onClose} title={isNew ? '新建题目' : `编辑题目 #${id}`} widthClassName="w-[720px] max-w-full">
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4" noValidate>
         {missing.length > 0 ? (
-          <div
-            role="status"
-            className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800"
-          >
+          <output className="block rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
             缺少: {missing.join(' / ')}（可继续保存为草稿）
-          </div>
+          </output>
         ) : null}
         <div className="grid grid-cols-2 gap-3">
           <Field label="镜头类型">
@@ -288,18 +285,21 @@ export function BenchmarkDrawer({ id, onClose, onSaved }: BenchmarkDrawerProps) 
           <MediaPicker
             label="音频输入"
             mediaType="audio"
+            multi
             selectedIds={media.audioInputIds}
             onChange={(ids) => setMedia((m) => ({ ...m, audioInputIds: ids }))}
           />
           <MediaPicker
             label="视频输入"
             mediaType="video"
+            multi
             selectedIds={media.videoInputIds}
             onChange={(ids) => setMedia((m) => ({ ...m, videoInputIds: ids }))}
           />
           <MediaPicker
             label="视频输出"
             mediaType="video"
+            multi
             selectedIds={media.videoOutputIds}
             onChange={(ids) => setMedia((m) => ({ ...m, videoOutputIds: ids }))}
           />
