@@ -154,7 +154,9 @@ function emptyMediaByRole(): MediaByRoleType {
 // thumbnails and play output videos inline — legacy parity. Media is batch
 // loaded for the whole page (one links query + one media query + parallel
 // presigning) to avoid an N+1 per row. Comments are still omitted from the list
-// payload; the detail fetch (`fetchItemWithMedia`) returns them.
+// payload, but `commentCount` is rolled up so the card can show the 评论 N
+// pill without a per-row fetch; the detail fetch (`fetchItemWithMedia`)
+// returns the full comment list.
 async function fetchPageItems(ids: number[]) {
   if (ids.length === 0) return [];
 
@@ -519,6 +521,30 @@ export const benchmarkRouter = t.router({
       const [updated] = await db
         .update(videoBenchmarkItems)
         .set({ needsRevision: input.needsRevision, updatedAt: new Date() })
+        .where(eq(videoBenchmarkItems.id, input.id))
+        .returning({ id: videoBenchmarkItems.id });
+      if (!updated) throw new TRPCError({ code: 'NOT_FOUND' });
+
+      const result = await fetchItemWithMedia(input.id);
+      if (!result) throw new TRPCError({ code: 'NOT_FOUND' });
+      return result;
+    }),
+
+  // Inline-edit path for the list card: the full `update` mutation requires a
+  // media bundle (it rebuilds links transactionally), so a score-only patch
+  // would force the card to keep a media snapshot just to set a number. A
+  // dedicated mutation matches the existing `setNeedsRevision` pattern.
+  setScore: protectedProcedure
+    .input(
+      z.object({
+        id: z.number().int().positive(),
+        score: z.number().int().min(0).max(5).nullable(),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      const [updated] = await db
+        .update(videoBenchmarkItems)
+        .set({ score: input.score, updatedAt: new Date() })
         .where(eq(videoBenchmarkItems.id, input.id))
         .returning({ id: videoBenchmarkItems.id });
       if (!updated) throw new TRPCError({ code: 'NOT_FOUND' });
