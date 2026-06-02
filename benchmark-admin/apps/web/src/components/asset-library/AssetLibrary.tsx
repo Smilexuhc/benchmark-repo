@@ -5,6 +5,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useDebounce } from 'use-debounce';
 import { AssetCard, type AssetCardData } from './AssetCard';
+import { BatchToolbar } from './BatchToolbar';
 import { FilterPanel } from './FilterPanel';
 import { type AssetKind, buildServerFilters, useFilterFields, useFilters } from './useFilters';
 
@@ -54,24 +55,18 @@ export type AssetLibraryProps = {
     onClose: () => void;
     onCreated: (newId: number) => void;
   }) => React.ReactNode;
-  selectionMode?: 'none' | 'multi';
-  selectedIds?: number[];
-  onSelectionChange?: (ids: number[]) => void;
-  headerActions?: React.ReactNode;
 };
 
-export function AssetLibrary({
-  kind,
-  renderDrawer,
-  selectionMode = 'none',
-  selectedIds = [],
-  onSelectionChange,
-  headerActions,
-}: AssetLibraryProps) {
+export function AssetLibrary({ kind, renderDrawer }: AssetLibraryProps) {
   const filterState = useFilters();
   const filterFields = useFilterFields(kind, filterState.deletedOnly);
   const [debouncedSearch] = useDebounce(filterState.search, 300);
   const [drawerId, setDrawerId] = useState<number | 'new' | null>(null);
+  // Batch mode is toggled by the BatchToolbar's "批量生成" button. Selection
+  // lives next to it so leaving batch mode resets to a clean slate (handled by
+  // the toolbar's exit flow), and the AssetCards see both via props below.
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
 
   const serverFilters = useMemo(
     () => buildServerFilters(filterState.filters),
@@ -111,12 +106,13 @@ export function AssetLibrary({
     utils.assets.list.invalidate({ kind });
   }
 
+  function toggleSelect(id: number) {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  }
+
   function onCardClick(id: number) {
-    if (selectionMode === 'multi' && onSelectionChange) {
-      const has = selectedIds.includes(id);
-      onSelectionChange(has ? selectedIds.filter((x) => x !== id) : [...selectedIds, id]);
-      return;
-    }
     setDrawerId(id);
   }
 
@@ -152,26 +148,18 @@ export function AssetLibrary({
             aria-label="搜索"
             className="w-72"
           />
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={!exportUrl.data}
-            onClick={() => {
-              if (exportUrl.data) window.location.href = exportUrl.data.url;
-            }}
-          >
-            导出资产包
-          </Button>
-          {headerActions ?? (
-            <Button size="sm" variant="outline" disabled>
-              批量生成
-            </Button>
-          )}
-          {renderDrawer ? (
-            <Button size="sm" onClick={() => setDrawerId('new')}>
-              新建{kindLabel}
-            </Button>
-          ) : null}
+          <BatchToolbar
+            kind={kind}
+            items={items}
+            selectMode={selectMode}
+            onEnterSelectMode={() => setSelectMode(true)}
+            onExitSelectMode={() => setSelectMode(false)}
+            selectedIds={selectedIds}
+            onSelectedIdsChange={setSelectedIds}
+            exportHref={exportUrl.data?.url}
+            onNewClick={renderDrawer ? () => setDrawerId('new') : undefined}
+            newLabel={`新建${kindLabel}`}
+          />
         </div>
 
         {list.isError ? (
@@ -187,7 +175,9 @@ export function AssetLibrary({
         ) : (
           <VirtualizedCardGrid
             items={items}
+            selectMode={selectMode}
             selectedIds={selectedIds}
+            onToggleSelect={toggleSelect}
             onCardClick={onCardClick}
             hasNextPage={list.hasNextPage ?? false}
             isFetchingNextPage={list.isFetchingNextPage}
@@ -230,7 +220,9 @@ function DrawerHost({
 
 type VirtualizedCardGridProps = {
   items: AssetCardData[];
+  selectMode: boolean;
   selectedIds: number[];
+  onToggleSelect: (id: number) => void;
   onCardClick: (id: number) => void;
   hasNextPage: boolean;
   isFetchingNextPage: boolean;
@@ -239,7 +231,9 @@ type VirtualizedCardGridProps = {
 
 function VirtualizedCardGrid({
   items,
+  selectMode,
   selectedIds,
+  onToggleSelect,
   onCardClick,
   hasNextPage,
   isFetchingNextPage,
@@ -297,7 +291,9 @@ function VirtualizedCardGrid({
                   <AssetCard
                     asset={asset}
                     onClick={onCardClick}
+                    selectMode={selectMode}
                     selected={selectedIds.includes(asset.id)}
+                    onToggleSelect={onToggleSelect}
                   />
                 </div>
               ))}
