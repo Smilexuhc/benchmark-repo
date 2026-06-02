@@ -1,17 +1,20 @@
+import { useVirtualizer } from '@tanstack/react-virtual';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useDebounce } from 'use-debounce';
+import { toast } from '@/components/feedback/toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { trpc } from '@/lib/trpc';
-import { useVirtualizer } from '@tanstack/react-virtual';
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { useDebounce } from 'use-debounce';
-import { AssetCard, type AssetCardData } from './AssetCard';
+import { AssetCard } from './AssetCard';
+import type { AssetCardData, AssetCardRenderExtra, AssetCardRenderInfo } from './AssetCard.types';
 import { BatchToolbar } from './BatchToolbar';
 import { FilterPanel } from './FilterPanel';
 import { type AssetKind, buildServerFilters, useFilterFields, useFilters } from './useFilters';
 
-// Card aspect-ratio (square image) + name/meta + gap; tune-by-eye is fine —
-// the virtualizer uses this as an estimate and adapts to measured heights.
-const ROW_ESTIMATE_PX = 280;
+// Vertical list — each row is one full-width AssetCard. Estimate keeps the
+// virtualizer's initial scroll height close enough; measured heights adjust on
+// mount so the scroll-anchor + load-more wiring keeps working unchanged.
+const ROW_ESTIMATE_PX = 232;
 const ROW_GAP_PX = 12;
 const SCROLL_HEIGHT = 'calc(100vh - 260px)';
 const NEAR_BOTTOM_PX = 360;
@@ -22,29 +25,7 @@ const KIND_LABEL: Record<AssetKind, string> = {
   prop: '道具',
 };
 
-// @tanstack/react-virtual re-exports `VirtualItem` via `export *`, which our
-// `verbatimModuleSyntax` setup doesn't surface for direct import. Mirror the
-// fields we actually read so the `.map(...)` callback has a real param type.
 type VRow = { key: string | number; index: number; start: number };
-
-// Tailwind grid-cols breakpoints used in the markup: default 2, sm:3, lg:4.
-// Match here so the virtualizer slices items into the right per-row count.
-function useResponsiveColumnCount(ref: React.RefObject<HTMLElement | null>) {
-  const [cols, setCols] = useState(4);
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    function update() {
-      const width = el?.clientWidth ?? 0;
-      setCols(width >= 768 ? 4 : width >= 560 ? 3 : 2);
-    }
-    update();
-    const ro = new ResizeObserver(update);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [ref]);
-  return cols;
-}
 
 export type { AssetKind };
 
@@ -55,13 +36,19 @@ export type AssetLibraryProps = {
     onClose: () => void;
     onCreated: (newId: number) => void;
   }) => React.ReactNode;
+  // Per-kind info column override; defaults to the kind-aware renderer in
+  // AssetCard.helpers. Pages may pass a custom one for kind-specific layouts.
+  renderInfo?: AssetCardRenderInfo;
+  // Optional 4th column (scenes use this for the multi-view picker).
+  renderExtra?: AssetCardRenderExtra;
 };
 
-export function AssetLibrary({ kind, renderDrawer }: AssetLibraryProps) {
+export function AssetLibrary({ kind, renderDrawer, renderInfo, renderExtra }: AssetLibraryProps) {
   const filterState = useFilters();
   const filterFields = useFilterFields(kind, filterState.deletedOnly);
   const [debouncedSearch] = useDebounce(filterState.search, 300);
   const [drawerId, setDrawerId] = useState<number | 'new' | null>(null);
+  const [generatingIds, setGeneratingIds] = useState<Set<number>>(new Set());
   // Batch mode is toggled by the BatchToolbar's "批量生成" button. Selection
   // lives next to it so leaving batch mode resets to a clean slate (handled by
   // the toolbar's exit flow), and the AssetCards see both via props below.
@@ -81,18 +68,12 @@ export function AssetLibrary({ kind, renderDrawer }: AssetLibraryProps) {
       filters: serverFilters,
     },
     {
-      // Server returns null when there is no next page.
       getNextPageParam: (lastPage: { nextCursor: number | null }) =>
         lastPage.nextCursor ?? undefined,
-      // Presigned URLs are valid for ~1h (storage.getPresignedUrl default).
-      // 30 min staleTime stops every refetch from re-signing the entire list
-      // and re-downloading every cached image (P1: presigned URL cache busting).
       staleTime: 30 * 60_000,
     },
   );
 
-  // Export reflects the active filter slice — same kind/search/filters as the
-  // list, so the ZIP matches what's on screen rather than always the whole library.
   const exportUrl = trpc.exports.getDownloadUrl.useQuery({
     kind,
     search: debouncedSearch || undefined,
@@ -100,24 +81,73 @@ export function AssetLibrary({ kind, renderDrawer }: AssetLibraryProps) {
     filters: serverFilters,
   });
 
+  const setCoverMutation = trpc.assets.setCover.useMutation();
+  const generateImageMutation = trpc.ai.generateImage.useMutation();
+
   const utils = trpc.useUtils();
 
   function refetch() {
     utils.assets.list.invalidate({ kind });
   }
 
+  function markGenerating(id: number, on: boolean) {
+    setGeneratingIds((prev) => {
+      const next = new Set(prev);
+      if (on) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }
+
+  async function handleSetCover(assetId: number, imageId: number) {
+    try {
+      await setCoverMutation.mutateAsync({ id: assetId, imageId });
+      toast.success('已设为默认展示图');
+      refetch();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '设为默认图失败');
+    }
+  }
+
+  async function handleRegenerate(asset: AssetCardData) {
+    const prompt = asset.data.prompt;
+    if (!prompt) {
+      toast.warning('还没有提示词,请先点「编辑」生成');
+      return;
+    }
+    markGenerating(asset.id, true);
+    try {
+      await generateImageMutation.mutateAsync({
+        kind: asset.kind,
+        id: asset.id,
+        prompt,
+      });
+      toast.success('图片已生成');
+      refetch();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '生成失败');
+    } finally {
+      markGenerating(asset.id, false);
+    }
+  }
+
+  function handleDownload(image: { id: number; url: string }) {
+    // The presigned URL is the canonical original — open in a new tab so the
+    // browser's Save-As / Content-Disposition takes over. Same pattern used by
+    // the lightbox's fallback download path (ui/lightbox.tsx:134).
+    if (!image.url) {
+      toast.error('图片地址无效,稍后重试');
+      return;
+    }
+    window.open(image.url, '_blank', 'noopener,noreferrer');
+  }
+
   function toggleSelect(id: number) {
-    setSelectedIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
-    );
+    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   }
 
-  function onCardClick(id: number) {
-    setDrawerId(id);
-  }
-
-  const items: AssetCardData[] =
-    list.data?.pages.flatMap((p: { items: AssetCardData[] }) => p.items) ?? [];
+  const items = (list.data?.pages.flatMap((p: { items: AssetCardData[] }) => p.items) ??
+    []) as AssetCardData[];
 
   const activeFilterCount = Object.values(filterState.filters).reduce(
     (sum, v) => sum + (Array.isArray(v) ? v.length : 0),
@@ -173,12 +203,18 @@ export function AssetLibrary({ kind, renderDrawer }: AssetLibraryProps) {
             暂无结果
           </div>
         ) : (
-          <VirtualizedCardGrid
+          <VirtualizedCardList
             items={items}
-            selectMode={selectMode}
             selectedIds={selectedIds}
+            selectMode={selectMode}
+            generatingIds={generatingIds}
+            renderInfo={renderInfo}
+            renderExtra={renderExtra}
+            onEdit={(id) => setDrawerId(id)}
             onToggleSelect={toggleSelect}
-            onCardClick={onCardClick}
+            onSetCover={handleSetCover}
+            onRegenerate={(asset) => handleRegenerate(asset)}
+            onDownload={handleDownload}
             hasNextPage={list.hasNextPage ?? false}
             isFetchingNextPage={list.isFetchingNextPage}
             fetchNextPage={list.fetchNextPage}
@@ -218,39 +254,48 @@ function DrawerHost({
   return <>{render({ id, onClose, onCreated })}</>;
 }
 
-type VirtualizedCardGridProps = {
+type VirtualizedCardListProps = {
   items: AssetCardData[];
-  selectMode: boolean;
   selectedIds: number[];
+  selectMode: boolean;
+  generatingIds: Set<number>;
+  renderInfo?: AssetCardRenderInfo | undefined;
+  renderExtra?: AssetCardRenderExtra | undefined;
+  onEdit: (id: number) => void;
   onToggleSelect: (id: number) => void;
-  onCardClick: (id: number) => void;
+  onSetCover: (assetId: number, imageId: number) => void;
+  onRegenerate: (asset: AssetCardData) => void;
+  onDownload: (image: { id: number; url: string }) => void;
   hasNextPage: boolean;
   isFetchingNextPage: boolean;
   fetchNextPage: () => unknown;
 };
 
-function VirtualizedCardGrid({
+function VirtualizedCardList({
   items,
-  selectMode,
   selectedIds,
+  selectMode,
+  generatingIds,
+  renderInfo,
+  renderExtra,
+  onEdit,
   onToggleSelect,
-  onCardClick,
+  onSetCover,
+  onRegenerate,
+  onDownload,
   hasNextPage,
   isFetchingNextPage,
   fetchNextPage,
-}: VirtualizedCardGridProps) {
+}: VirtualizedCardListProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const cols = useResponsiveColumnCount(scrollRef);
-  const rowCount = Math.ceil(items.length / cols);
 
   const rowVirtualizer = useVirtualizer<HTMLDivElement, HTMLDivElement>({
-    count: rowCount,
+    count: items.length,
     getScrollElement: () => scrollRef.current,
     estimateSize: () => ROW_ESTIMATE_PX + ROW_GAP_PX,
     overscan: 3,
   });
 
-  // Auto-fetch next page as the user nears the bottom of the scroll container.
   useEffect(() => {
     const el = scrollRef.current;
     if (!el || !hasNextPage) return;
@@ -274,29 +319,29 @@ function VirtualizedCardGrid({
         style={{ height: `${rowVirtualizer.getTotalSize()}px` }}
       >
         {rowVirtualizer.getVirtualItems().map((virtualRow: VRow) => {
-          const start = virtualRow.index * cols;
-          const rowItems = items.slice(start, start + cols);
+          const asset = items[virtualRow.index];
+          if (!asset) return null;
           return (
             <div
               key={virtualRow.key}
-              className="absolute left-0 right-0 grid gap-3"
-              style={{
-                transform: `translateY(${virtualRow.start}px)`,
-                gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
-              }}
+              // biome-ignore lint/a11y/useSemanticElements: virtualizer-positioned div inside a role="list"
+              role="listitem"
+              className="absolute left-0 right-0"
+              style={{ transform: `translateY(${virtualRow.start}px)` }}
             >
-              {rowItems.map((asset) => (
-                // biome-ignore lint/a11y/useSemanticElements: grid cell wrapper inside a role="list"; div keeps virtualizer layout intact
-                <div key={asset.id} role="listitem">
-                  <AssetCard
-                    asset={asset}
-                    onClick={onCardClick}
-                    selectMode={selectMode}
-                    selected={selectedIds.includes(asset.id)}
-                    onToggleSelect={onToggleSelect}
-                  />
-                </div>
-              ))}
+              <AssetCard
+                asset={asset}
+                selected={selectedIds.includes(asset.id)}
+                selectMode={selectMode}
+                generating={generatingIds.has(asset.id)}
+                renderInfo={renderInfo}
+                renderExtra={renderExtra}
+                onEdit={onEdit}
+                onToggleSelect={onToggleSelect}
+                onSetCover={(imageId) => onSetCover(asset.id, imageId)}
+                onRegenerate={() => onRegenerate(asset)}
+                onDownload={onDownload}
+              />
             </div>
           );
         })}
