@@ -4,8 +4,8 @@ import { useDebounce } from 'use-debounce';
 import { Button } from '@/components/ui/button';
 import { trpc } from '@/lib/trpc';
 import { AssetCard, type AssetCardData } from './AssetCard';
-import { type FilterField, FilterPanel } from './FilterPanel';
-import { buildServerFilters, useFilters } from './useFilters';
+import { FilterPanel } from './FilterPanel';
+import { type AssetKind, buildServerFilters, useFilterFields, useFilters } from './useFilters';
 
 // Card aspect-ratio (square image) + name/meta + gap; tune-by-eye is fine —
 // the virtualizer uses this as an estimate and adapts to measured heights.
@@ -38,11 +38,10 @@ function useResponsiveColumnCount(ref: React.RefObject<HTMLElement | null>) {
   return cols;
 }
 
-export type AssetKind = 'character' | 'scene' | 'prop';
+export type { AssetKind };
 
 export type AssetLibraryProps = {
   kind: AssetKind;
-  filterFields: FilterField[];
   renderDrawer?: (props: {
     id: number;
     onClose: () => void;
@@ -56,7 +55,6 @@ export type AssetLibraryProps = {
 
 export function AssetLibrary({
   kind,
-  filterFields,
   renderDrawer,
   selectionMode = 'none',
   selectedIds = [],
@@ -64,6 +62,7 @@ export function AssetLibrary({
   headerActions,
 }: AssetLibraryProps) {
   const filterState = useFilters();
+  const filterFields = useFilterFields(kind, filterState.deletedOnly);
   const [debouncedSearch] = useDebounce(filterState.search, 300);
   const [drawerId, setDrawerId] = useState<number | 'new' | null>(null);
 

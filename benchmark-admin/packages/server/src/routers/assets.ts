@@ -2,7 +2,11 @@ import { TRPCError } from '@trpc/server';
 import { type SQL, and, desc, eq, inArray, isNotNull, isNull, lt, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { assets, media } from '@benchmark-admin/shared/db/schema';
-import { AssetInsert, AssetUpdate } from '@benchmark-admin/shared/schemas/assets';
+import {
+  AssetInsert,
+  AssetOptionsInput,
+  AssetUpdate,
+} from '@benchmark-admin/shared/schemas/assets';
 import { db } from '../db/index.js';
 import { softDeleteMedia } from '../db/soft-delete.js';
 import * as storage from '../services/storage/index.js';
@@ -109,6 +113,70 @@ async function fetchPageWithCoverImage(ids: number[]) {
     .filter((a): a is NonNullable<typeof a> => a !== null);
 }
 
+// ── Filter option ordering ────────────────────────────────────────────────────
+// Legacy display order; novel values (anything not in the list) sort
+// lexicographically after the ordered ones.
+const ERA_ORDER = ['古代', '近代', '现代', '未来', '奇幻', '科幻'] as const;
+const GENDER_ORDER = ['男', '女', '其他'] as const;
+const AGE_ORDER = ['婴幼儿', '儿童', '少年', '青年', '中年', '老年'] as const;
+
+function sortWithFallback(values: string[], order?: readonly string[]): string[] {
+  const rank = order ? new Map(order.map((v, i) => [v, i])) : null;
+  return [...values].sort((a, b) => {
+    if (rank) {
+      const ra = rank.get(a);
+      const rb = rank.get(b);
+      if (ra !== undefined && rb !== undefined) return ra - rb;
+      if (ra !== undefined) return -1;
+      if (rb !== undefined) return 1;
+    }
+    return a.localeCompare(b, 'zh-Hans-CN');
+  });
+}
+
+type JsonbField = 'type' | 'gender' | 'age' | 'scene_type' | 'mood' | 'category';
+type AssetKind = 'character' | 'scene' | 'prop';
+
+async function distinctColumn(
+  kind: AssetKind,
+  column: 'era' | 'genre',
+  deletedOnly: boolean,
+): Promise<string[]> {
+  const col = assets[column];
+  const rows = await db
+    .selectDistinct({ value: col })
+    .from(assets)
+    .where(
+      and(
+        eq(assets.kind, kind),
+        deletedOnly ? isNotNull(assets.deletedAt) : isNull(assets.deletedAt),
+        isNotNull(col),
+        sql`${col} <> ''`,
+      ),
+    );
+  return rows.map((r) => r.value).filter((v): v is string => v !== null && v !== '');
+}
+
+async function distinctJsonbField(
+  kind: AssetKind,
+  field: JsonbField,
+  deletedOnly: boolean,
+): Promise<string[]> {
+  const expr = sql<string | null>`(${assets.data}->>${field})`;
+  const rows = await db
+    .selectDistinct({ value: expr })
+    .from(assets)
+    .where(
+      and(
+        eq(assets.kind, kind),
+        deletedOnly ? isNotNull(assets.deletedAt) : isNull(assets.deletedAt),
+        sql`${expr} IS NOT NULL`,
+        sql`${expr} <> ''`,
+      ),
+    );
+  return rows.map((r) => r.value).filter((v): v is string => v !== null && v !== '');
+}
+
 // ── Filter input ──────────────────────────────────────────────────────────────
 
 const FiltersInput = z.object({
@@ -125,6 +193,54 @@ const FiltersInput = z.object({
 // ── Router ────────────────────────────────────────────────────────────────────
 
 export const assetsRouter = t.router({
+  // Distinct filter values per kind, replacing the static FIELDS arrays the
+  // admin used to ship. Source of truth is the data itself, so newly-imported
+  // values (e.g. CSV ethnicities `亚洲人/欧洲人/非洲人/机器人`) show up
+  // without a frontend change.
+  options: protectedProcedure.input(AssetOptionsInput).query(async ({ input }) => {
+    const { kind, deletedOnly } = input;
+
+    if (kind === 'character') {
+      const [era, genre, type, gender, age] = await Promise.all([
+        distinctColumn(kind, 'era', deletedOnly),
+        distinctColumn(kind, 'genre', deletedOnly),
+        distinctJsonbField(kind, 'type', deletedOnly),
+        distinctJsonbField(kind, 'gender', deletedOnly),
+        distinctJsonbField(kind, 'age', deletedOnly),
+      ]);
+      return {
+        kind: 'character' as const,
+        era: sortWithFallback(era, ERA_ORDER),
+        genre: sortWithFallback(genre),
+        type: sortWithFallback(type),
+        gender: sortWithFallback(gender, GENDER_ORDER),
+        age: sortWithFallback(age, AGE_ORDER),
+      };
+    }
+
+    if (kind === 'scene') {
+      const [era, genre, sceneType, mood] = await Promise.all([
+        distinctColumn(kind, 'era', deletedOnly),
+        distinctColumn(kind, 'genre', deletedOnly),
+        distinctJsonbField(kind, 'scene_type', deletedOnly),
+        distinctJsonbField(kind, 'mood', deletedOnly),
+      ]);
+      return {
+        kind: 'scene' as const,
+        era: sortWithFallback(era, ERA_ORDER),
+        genre: sortWithFallback(genre),
+        scene_type: sortWithFallback(sceneType),
+        mood: sortWithFallback(mood),
+      };
+    }
+
+    const category = await distinctJsonbField(kind, 'category', deletedOnly);
+    return {
+      kind: 'prop' as const,
+      category: sortWithFallback(category),
+    };
+  }),
+
   list: protectedProcedure
     .input(
       z.object({

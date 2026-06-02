@@ -230,6 +230,138 @@ describe('assetsRouter', () => {
     });
   });
 
+  describe('options', () => {
+    it('returns distinct character options sorted in legacy display order with novel values lexicographic', async () => {
+      const { resetTestDb } = await import('../../db/__tests__/pglite.js');
+      await resetTestDb();
+
+      // Seed-shaped fixtures: era 古代/现代/未来; ethnicity types like the CSV;
+      // gender includes 中性 (novel) which must fall after the ordered set.
+      const fixtures = [
+        { name: 'A', era: '现代', genre: '现代-职场', data: { type: '亚洲人', gender: '女', age: '青年' } },
+        { name: 'B', era: '古代', genre: '中国古代', data: { type: '欧洲人', gender: '男', age: '中年' } },
+        { name: 'C', era: '未来', genre: '科幻-星际', data: { type: '机器人', gender: '中性', age: '婴幼儿' } },
+        { name: 'D', era: '现代', genre: '现代-校园', data: { type: '非洲人', gender: '其他', age: '老年' } },
+        { name: 'E', era: '现代', genre: '现代-都市', data: { type: '混血', gender: '男', age: '少年' } },
+      ];
+      for (const f of fixtures) {
+        await caller.assets.create({ kind: 'character', ...f });
+      }
+
+      const opts = await caller.assets.options({ kind: 'character', deletedOnly: false });
+      if (opts.kind !== 'character') throw new Error(`expected character, got ${opts.kind}`);
+
+      expect(opts.era).toEqual(['古代', '现代', '未来']);
+      // genre — lexicographic; CSV-style values present
+      expect(opts.genre).toContain('现代-职场');
+      expect(opts.genre).toContain('现代-校园');
+      expect(opts.genre).toContain('中国古代');
+      expect([...opts.type].sort()).toEqual(['亚洲人', '非洲人', '机器人', '混血', '欧洲人'].sort());
+      expect(opts.type).not.toContain('人类');
+      // gender — ordered first, novel lexicographic last
+      expect(opts.gender).toEqual(['男', '女', '其他', '中性']);
+      // age — youngest-first ordered set
+      expect(opts.age).toEqual(['婴幼儿', '少年', '青年', '中年', '老年']);
+    });
+
+    it('returns scene options including 氛围时段 (mood) distinct from 题材 (genre) with seed-shaped values', async () => {
+      const { resetTestDb } = await import('../../db/__tests__/pglite.js');
+      await resetTestDb();
+
+      const fixtures = [
+        { name: '金銮殿', era: '古代', genre: '中国古代', data: { scene_type: '室内', mood: '白天' } },
+        { name: '废墟街道', era: '未来', genre: '末世废土', data: { scene_type: '室外', mood: '白天' } },
+        { name: '霓虹街道', era: '未来', genre: '科幻-赛博朋克', data: { scene_type: '室外', mood: '夜晚' } },
+        { name: '咖啡馆', era: '现代', genre: '现代-都市', data: { scene_type: '室内', mood: '黄昏' } },
+      ];
+      for (const f of fixtures) {
+        await caller.assets.create({ kind: 'scene', ...f });
+      }
+
+      const opts = await caller.assets.options({ kind: 'scene', deletedOnly: false });
+      if (opts.kind !== 'scene') throw new Error(`expected scene, got ${opts.kind}`);
+
+      // genre = the legacy 题材 set; mood = 氛围时段; they are distinct fields.
+      expect([...opts.genre].sort()).toEqual(['中国古代', '末世废土', '现代-都市', '科幻-赛博朋克'].sort());
+      // mood is sorted lexicographically (zh-Hans-CN); contents matter more than order here.
+      expect([...opts.mood].sort()).toEqual(['白天', '夜晚', '黄昏'].sort());
+      // scene_type — both 室内 and 室外 present (admin was missing these).
+      expect(opts.scene_type).toContain('室内');
+      expect(opts.scene_type).toContain('室外');
+      expect(opts.era).toEqual(['古代', '现代', '未来']);
+    });
+
+    it('returns prop options with only category populated', async () => {
+      const { resetTestDb } = await import('../../db/__tests__/pglite.js');
+      await resetTestDb();
+
+      await caller.assets.create({ kind: 'prop', name: '宝剑', data: { category: '武器' } });
+      await caller.assets.create({ kind: 'prop', name: '茶壶', data: { category: '日用品' } });
+      await caller.assets.create({ kind: 'prop', name: '药瓶', data: { category: '医疗' } });
+
+      const opts = await caller.assets.options({ kind: 'prop', deletedOnly: false });
+      if (opts.kind !== 'prop') throw new Error(`expected prop, got ${opts.kind}`);
+
+      expect([...opts.category].sort()).toEqual(['医疗', '日用品', '武器'].sort());
+      // 'prop' variant only carries `category` — no era/genre keys on the wire.
+      expect(Object.keys(opts).sort()).toEqual(['category', 'kind']);
+    });
+
+    it('deletedOnly:true reflects only soft-deleted rows', async () => {
+      const { resetTestDb } = await import('../../db/__tests__/pglite.js');
+      await resetTestDb();
+
+      await caller.assets.create({
+        kind: 'character',
+        name: 'Alive',
+        era: '现代',
+        data: { type: '亚洲人' },
+      });
+      const dead = await caller.assets.create({
+        kind: 'character',
+        name: 'Dead',
+        era: '古代',
+        data: { type: '机器人' },
+      });
+      await caller.assets.delete({ id: dead.id });
+
+      const liveOpts = await caller.assets.options({ kind: 'character', deletedOnly: false });
+      if (liveOpts.kind !== 'character') throw new Error('expected character');
+      expect(liveOpts.era).toEqual(['现代']);
+      expect(liveOpts.type).toEqual(['亚洲人']);
+
+      const trashOpts = await caller.assets.options({ kind: 'character', deletedOnly: true });
+      if (trashOpts.kind !== 'character') throw new Error('expected character');
+      expect(trashOpts.era).toEqual(['古代']);
+      expect(trashOpts.type).toEqual(['机器人']);
+    });
+
+    it('empty kind returns empty arrays, not error', async () => {
+      const { resetTestDb } = await import('../../db/__tests__/pglite.js');
+      await resetTestDb();
+
+      const opts = await caller.assets.options({ kind: 'scene', deletedOnly: false });
+      if (opts.kind !== 'scene') throw new Error(`expected scene, got ${opts.kind}`);
+      expect(opts.era).toEqual([]);
+      expect(opts.genre).toEqual([]);
+      expect(opts.scene_type).toEqual([]);
+      expect(opts.mood).toEqual([]);
+    });
+
+    it('rejects anonymous calls (protectedProcedure)', async () => {
+      const { appRouter } = await import('../../trpc/index.js');
+      const anonCaller = appRouter.createCaller({
+        req: { headers: { 'x-trpc-source': 'test' } } as never,
+        res: {} as never,
+        info: {} as never,
+        session: null,
+      });
+      await expect(
+        anonCaller.assets.options({ kind: 'character', deletedOnly: false }),
+      ).rejects.toThrow(/UNAUTHORIZED/);
+    });
+  });
+
   describe('list payload trimming', () => {
     it('list returns only the cover image per asset while get returns all images', async () => {
       const asset = await caller.assets.create({
