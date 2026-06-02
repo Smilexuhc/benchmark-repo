@@ -35,7 +35,7 @@ const SCREEN_SIZE_OPTIONS = ['16:9', '9:16', '2.39:1']
 
 const DEFAULT_PAGE_SIZE = 20
 
-type FilterKey = 'shot_type' | 'task_type' | 'question_type' | 'scene' | 'screen_size' | 'difficulty'
+type FilterKey = 'category_l1' | 'category_l2' | 'category_l3' | 'scene' | 'screen_size' | 'difficulty'
 
 const DIFFICULTY_OPTIONS = ['易', '中', '难']
 const DIFFICULTY_TAG_COLOR: Record<string, string> = {
@@ -45,7 +45,7 @@ const DIFFICULTY_TAG_COLOR: Record<string, string> = {
 }
 const DIFFICULTY_PREFIX_RE = /^【([易中难])】\s*/
 
-// 卡片上展示的 chip 字段：shot_type / question_type 提升到标题，scene / screen_size 留作小标签
+// 卡片上展示的 chip 字段：新分类提升到标题，scene / screen_size 留作小标签
 const TAG_FIELDS: FilterKey[] = ['scene', 'screen_size']
 
 const MODEL_NAME = 'Seedance'  // v1: 仅一个模型；未来多模型时右侧扩展为多列
@@ -402,22 +402,25 @@ function ItemCard({
   const [promptExpanded, setPromptExpanded] = useState(false)
   const [judgingExpanded, setJudgingExpanded] = useState(false)
 
-  // 标题：question_type 命中树时显示带序号的 [L1 label, L2 label, L3 label]，未命中（legacy）则只显示 shot_type
-  const shotType = item.shot_type?.trim()
-  const questionType = item.question_type?.trim()
-  const cascaderLabels = shotType && questionType ? findCascaderLabels(shotType, questionType) : undefined
+  // 标题：新分类命中树时显示带序号的 [L1 label, L2 label, L3 label]
+  const categoryL1 = item.category_l1?.trim()
+  const categoryL2 = item.category_l2?.trim()
+  const categoryL3 = item.category_l3?.trim()
+  const cascaderLabels = categoryL1 && categoryL2 && categoryL3
+    ? findCascaderLabels(categoryL1, categoryL2, categoryL3)
+    : undefined
   const titleParts = cascaderLabels
     ? cascaderLabels
-    : ([shotType].filter(Boolean) as string[])
+    : ([categoryL1, categoryL2, categoryL3].filter(Boolean) as string[])
 
   // 顺序与编辑抽屉一致：测试点人工标注 → 场景 → 屏幕尺寸
-  // 当 question_type 已经在标题里时，manual_tag 与之相同则去重；legacy 情况下不去重，让 legacy 文案落到下一行
+  // 当 category_l3 已经在标题里时，manual_tag 与之相同则去重。
   const difficultyValue = item.difficulty?.trim()
   const manualTagValue = item.manual_tag?.trim()
   const manualTagText = difficultyValue
     ? manualTagValue?.replace(DIFFICULTY_PREFIX_RE, '').trim()
     : manualTagValue
-  const shouldShowManualTag = manualTagText && (!cascaderLabels || manualTagText !== questionType)
+  const shouldShowManualTag = manualTagText && manualTagText !== categoryL3
   const tags: { field: string; value: string; color?: string }[] = []
   if (difficultyValue) {
     tags.push({
@@ -522,6 +525,22 @@ function ItemCard({
           </div>
         )}
 
+        {item.category_definition?.trim() ? (
+          <div
+            style={{
+              fontSize: 12,
+              lineHeight: '18px',
+              color: '#5a6068',
+              background: '#f8f9fb',
+              border: '1px solid #eef0f3',
+              borderRadius: 6,
+              padding: '7px 9px',
+            }}
+          >
+            {item.category_definition}
+          </div>
+        ) : null}
+
         {item.text_prompt?.trim() ? (
           <ExpandableText
             icon="📝"
@@ -573,9 +592,9 @@ export default function BenchmarkItemsPage() {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE)
   const [filters, setFilters] = useState<Record<FilterKey, string | undefined>>({
-    shot_type: undefined,
-    task_type: undefined,
-    question_type: undefined,
+    category_l1: undefined,
+    category_l2: undefined,
+    category_l3: undefined,
     scene: undefined,
     screen_size: undefined,
     difficulty: undefined,
@@ -646,9 +665,9 @@ export default function BenchmarkItemsPage() {
 
   const resetFilters = () => {
     setFilters({
-      shot_type: undefined,
-      task_type: undefined,
-      question_type: undefined,
+      category_l1: undefined,
+      category_l2: undefined,
+      category_l3: undefined,
       scene: undefined,
       screen_size: undefined,
       difficulty: undefined,
@@ -725,7 +744,7 @@ export default function BenchmarkItemsPage() {
         <Space size={8} wrap>
           <Cascader
             allowClear
-            placeholder="镜头类型 / 题目类型"
+            placeholder="新分类"
             value={cascaderPath}
             options={cascaderOptions}
             changeOnSelect
@@ -739,21 +758,21 @@ export default function BenchmarkItemsPage() {
               const arr = (value ?? []) as string[]
               setCascaderPath(arr.length ? arr : undefined)
               setFilters((current) => {
-                let questionType: string | undefined
+                let categoryL3Filter: string | undefined
                 if (arr.length === 3) {
-                  questionType = arr[2]
+                  categoryL3Filter = arr[2]
                 } else if (arr.length === 2) {
-                  // 选到 L2（含"待归类"）时，把该 L2 下所有 L3 的 value
-                  // 拼成逗号串传给后端，由 = ANY(...) 命中其下全部 question_type
+                  // 选到 L2 时，把该 L2 下所有 L3 的 value 拼成逗号串传给后端。
                   const l1Opt = cascaderOptions.find((o) => o.value === arr[0])
                   const l2Opt = l1Opt?.children?.find((c) => c.value === arr[1])
                   const childValues = (l2Opt?.children ?? []).map((c) => c.value as string)
-                  questionType = childValues.length ? childValues.join(',') : undefined
+                  categoryL3Filter = childValues.length ? childValues.join(',') : undefined
                 }
                 return {
                   ...current,
-                  shot_type: arr[0] || undefined,
-                  question_type: questionType,
+                  category_l1: arr[0] || undefined,
+                  category_l2: arr[1] || undefined,
+                  category_l3: categoryL3Filter,
                 }
               })
               setPage(1)

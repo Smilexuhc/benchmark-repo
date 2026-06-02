@@ -168,7 +168,7 @@ export const videoBenchmarkApi = {
     req<{ ok: boolean }>(`/api/video-benchmark-items/${id}`, { method: 'DELETE' }),
   stats: () =>
     req<{
-      groups: { shot_type: string; question_type: string; count: number }[]
+      groups: { category_l1: string; category_l2: string; category_l3: string; count: number }[]
       today_new: number
     }>('/api/video-benchmark-items/stats'),
   listComments: (id: number) =>

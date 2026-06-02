@@ -87,6 +87,10 @@ export interface VideoBenchmarkItem {
   task_type: string
   question_type: string
   manual_tag: string
+  category_l1: string
+  category_l2: string
+  category_l3: string
+  category_definition: string
   difficulty: string
   scene: string
   screen_size: string
@@ -140,6 +144,7 @@ export interface BenchmarkComment {
 export type VideoBenchmarkItemInput = Pick<
   VideoBenchmarkItem,
   | 'shot_type' | 'task_type' | 'question_type' | 'manual_tag' | 'difficulty' | 'scene' | 'screen_size'
+  | 'category_l1' | 'category_l2' | 'category_l3' | 'category_definition'
   | 'character_image_asset' | 'scene_image_asset' | 'prop_image_asset'
   | 'audio_input' | 'video_input' | 'text_prompt' | 'judging_criteria' | 'video_output' | 'score'
   | 'character_image_id' | 'scene_image_id' | 'prop_image_id' | 'audio_input_id'
@@ -185,6 +190,9 @@ export interface VideoBenchmarkListParams {
   shot_type?: string
   task_type?: string
   question_type?: string
+  category_l1?: string
+  category_l2?: string
+  category_l3?: string
   scene?: string
   screen_size?: string
   score?: number | null
@@ -203,9 +211,9 @@ export const CHARACTER_FILTER_FIELDS = ['era', 'type', 'gender', 'age', 'genre']
 export const SCENE_FILTER_FIELDS = ['era', 'scene_type', 'genre', 'mood']
 export const PROP_FILTER_FIELDS = ['category']
 export const VIDEO_BENCHMARK_FILTER_FIELDS = [
-  'shot_type',
-  'task_type',
-  'question_type',
+  'category_l1',
+  'category_l2',
+  'category_l3',
   'scene',
   'screen_size',
   'score',
@@ -224,6 +232,10 @@ export const FIELD_LABELS: Record<string, string> = {
   task_type: '任务类型',
   question_type: '题目类型',
   manual_tag: '测试点人工标注',
+  category_l1: '一级分类',
+  category_l2: '二级分类',
+  category_l3: '三级分类',
+  category_definition: '分类定义',
   difficulty: '难度',
   scene: '场景',
   screen_size: '屏幕尺寸',
@@ -263,6 +275,10 @@ export const emptyVideoBenchmarkItem: VideoBenchmarkItemInput = {
   task_type: '',
   question_type: '',
   manual_tag: '',
+  category_l1: '',
+  category_l2: '',
+  category_l3: '',
+  category_definition: '',
   difficulty: '',
   scene: '',
   screen_size: '',
