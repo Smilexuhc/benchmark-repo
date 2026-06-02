@@ -1,9 +1,11 @@
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useEffect, useRef, useState } from 'react';
+import { useDebounce } from 'use-debounce';
 import { LazyImage } from '@/components/asset-library/LazyImage';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Drawer } from '@/components/ui/drawer';
+import { Input } from '@/components/ui/input';
 import { type RouterOutputs, trpc } from '@/lib/trpc';
 
 type MediaItem = RouterOutputs['mediaAssets']['list']['items'][number];
@@ -42,6 +44,8 @@ export function MediaPicker({
   onChange,
 }: MediaPickerProps) {
   const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const [debouncedSearch] = useDebounce(search, 300);
   const uploadInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const utils = trpc.useUtils();
@@ -53,6 +57,7 @@ export function MediaPicker({
     {
       mediaType,
       ...(assetKind ? { kind: assetKind } : {}),
+      search: debouncedSearch || undefined,
       dedup: false,
     },
     {
@@ -63,8 +68,7 @@ export function MediaPicker({
     },
   );
 
-  const items: MediaItem[] =
-    list.data?.pages.flatMap((p: { items: MediaItem[] }) => p.items) ?? [];
+  const items: MediaItem[] = list.data?.pages.flatMap((p: { items: MediaItem[] }) => p.items) ?? [];
   const selected = items.filter((i: MediaItem) => selectedIds.includes(i.id));
 
   // Reconcile after the drawer opens and the ENTIRE list has loaded — if a
@@ -75,17 +79,23 @@ export function MediaPicker({
   // fetched would wrongly drop selections living on an unfetched page.
   // onChange is intentionally omitted from deps: parents inline a fresh closure
   // each render, so depending on it would re-fire the effect and loop.
+  // An active search narrows `items` to matching rows only, so a selected id that
+  // doesn't match the term would look "missing" and be wrongly pruned. Only
+  // reconcile against the UNFILTERED list (no search term).
   // biome-ignore lint/correctness/useExhaustiveDependencies: see note above
   useEffect(() => {
-    if (!open || list.isPending || list.hasNextPage || items.length === 0) return;
+    if (!open || debouncedSearch || list.isPending || list.hasNextPage || items.length === 0)
+      return;
     const known = new Set(items.map((i: MediaItem) => i.id));
     const surviving = selectedIds.filter((id) => known.has(id));
     if (surviving.length !== selectedIds.length) onChange(surviving);
-  }, [open, list.isPending, list.hasNextPage, items, selectedIds]);
+  }, [open, debouncedSearch, list.isPending, list.hasNextPage, items, selectedIds]);
 
   function toggle(id: number) {
     if (multi) {
-      onChange(selectedIds.includes(id) ? selectedIds.filter((x) => x !== id) : [...selectedIds, id]);
+      onChange(
+        selectedIds.includes(id) ? selectedIds.filter((x) => x !== id) : [...selectedIds, id],
+      );
     } else {
       onChange(selectedIds.includes(id) ? [] : [id]);
       setOpen(false);
@@ -121,7 +131,8 @@ export function MediaPicker({
         if (multi) {
           onChange([...selectedIds, ...newIds]);
         } else {
-          onChange([newIds[newIds.length - 1]!]);
+          const lastId = newIds[newIds.length - 1];
+          if (lastId !== undefined) onChange([lastId]);
         }
       }
     } finally {
@@ -162,7 +173,10 @@ export function MediaPicker({
       </div>
       <div className="flex flex-wrap gap-2">
         {selected.map((it: MediaItem) => (
-          <div key={it.id} className="flex items-center gap-1 rounded border border-[hsl(var(--border))] p-1">
+          <div
+            key={it.id}
+            className="flex items-center gap-1 rounded border border-[hsl(var(--border))] p-1"
+          >
             <LazyImage src={it.url} alt={`media-${it.id}`} className="h-10 w-10 rounded" />
             <button
               type="button"
@@ -184,11 +198,25 @@ export function MediaPicker({
       </div>
 
       {open ? (
-        <Drawer open onClose={() => setOpen(false)} title={label} widthClassName="w-[640px] max-w-full">
+        <Drawer
+          open
+          onClose={() => setOpen(false)}
+          title={label}
+          widthClassName="w-[640px] max-w-full"
+        >
+          <Input
+            aria-label="搜索素材"
+            placeholder="搜索标题 / 文件名 / 来源…"
+            className="mb-3"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
           {list.isPending ? (
             <p className="text-sm text-[hsl(var(--muted-foreground))]">加载中…</p>
           ) : items.length === 0 ? (
-            <p className="text-sm text-[hsl(var(--muted-foreground))]">没有可用的 {mediaType} 媒体。</p>
+            <p className="text-sm text-[hsl(var(--muted-foreground))]">
+              没有可用的 {mediaType} 媒体。
+            </p>
           ) : (
             <VirtualizedMediaGrid
               items={items}
@@ -252,10 +280,7 @@ function VirtualizedMediaGrid({
 
   return (
     <div ref={scrollRef} className="overflow-auto" style={{ height: PICKER_SCROLL_HEIGHT }}>
-      <div
-        className="relative w-full"
-        style={{ height: `${rowVirtualizer.getTotalSize()}px` }}
-      >
+      <div className="relative w-full" style={{ height: `${rowVirtualizer.getTotalSize()}px` }}>
         {rowVirtualizer.getVirtualItems().map((virtualRow: VRow) => {
           const start = virtualRow.index * PICKER_COLS;
           const rowItems = items.slice(start, start + PICKER_COLS);
@@ -275,10 +300,16 @@ function VirtualizedMediaGrid({
                     onClick={() => onToggle(it.id)}
                     className={`overflow-hidden rounded border text-left ${active ? 'border-[hsl(var(--primary))] ring-2 ring-[hsl(var(--ring))]' : 'border-[hsl(var(--border))]'}`}
                   >
-                    <LazyImage src={it.url} alt={`media-${it.id}`} className="aspect-square w-full" />
+                    <LazyImage
+                      src={it.url}
+                      alt={`media-${it.id}`}
+                      className="aspect-square w-full"
+                    />
                     <div className="px-1.5 py-1 text-xs">
                       <div className="truncate">#{it.id}</div>
-                      <div className="truncate text-[hsl(var(--muted-foreground))]">{it.source}</div>
+                      <div className="truncate text-[hsl(var(--muted-foreground))]">
+                        {it.source}
+                      </div>
                     </div>
                   </button>
                 );

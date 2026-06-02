@@ -22,6 +22,16 @@ import { MediaPicker } from './MediaPicker';
 const SCENE_OPTIONS = ['电影 / 预告片', '短剧 / 剧情片段', '动画 / 风格化内容'] as const;
 const SCREEN_SIZE_OPTIONS = ['16:9', '9:16', '2.39:1'] as const;
 const SCORE_OPTIONS = [null, 0, 1, 2, 3, 4, 5] as const;
+const DIFFICULTY_OPTIONS = ['', '易', '中', '难'] as const;
+
+// Legacy auto-prefixes the manual tag with the difficulty marker, e.g. 【难】.
+// Strip any existing 【易/中/难】 prefix before re-applying the current one, so
+// changing difficulty replaces the marker rather than stacking them.
+const DIFFICULTY_PREFIX_RE = /^【([易中难])】\s*/;
+function applyDifficultyPrefix(manualTag: string, difficulty: string): string {
+  const base = manualTag.replace(DIFFICULTY_PREFIX_RE, '').trim();
+  return difficulty ? `【${difficulty}】${base ? ` ${base}` : ''}` : base;
+}
 
 const FormSchema = z.object({
   shotType: z.string(),
@@ -30,6 +40,7 @@ const FormSchema = z.object({
   manualTag: z.string(),
   scene: z.string(),
   screenSize: z.string(),
+  difficulty: z.enum(['', '易', '中', '难']),
   textPrompt: z.string(),
   judgingCriteria: z.string(),
   score: z
@@ -47,6 +58,7 @@ const EMPTY: FormValues = {
   manualTag: '',
   scene: '',
   screenSize: '',
+  difficulty: '',
   textPrompt: '',
   judgingCriteria: '',
   score: null,
@@ -109,6 +121,7 @@ export function BenchmarkDrawer({ id, onClose, onSaved }: BenchmarkDrawerProps) 
           manualTag: get.data.manualTag,
           scene: get.data.scene,
           screenSize: get.data.screenSize,
+          difficulty: get.data.difficulty as FormValues['difficulty'],
           textPrompt: get.data.textPrompt,
           judgingCriteria: get.data.judgingCriteria,
           score: get.data.score,
@@ -151,10 +164,15 @@ export function BenchmarkDrawer({ id, onClose, onSaved }: BenchmarkDrawerProps) 
   if (!hasAnyMedia) missing.push('媒体');
 
   const onSubmit: SubmitHandler<FormValues> = async (values) => {
+    // Stamp the difficulty marker onto the manual tag (legacy parity).
+    const payload = {
+      ...values,
+      manualTag: applyDifficultyPrefix(values.manualTag, values.difficulty),
+    };
     if (isNew) {
-      await create.mutateAsync({ ...values, media });
+      await create.mutateAsync({ ...payload, media });
     } else {
-      await update.mutateAsync({ id, ...values, media });
+      await update.mutateAsync({ id, ...payload, media });
     }
     await Promise.all([
       utils.benchmark.list.invalidate(),
@@ -166,15 +184,17 @@ export function BenchmarkDrawer({ id, onClose, onSaved }: BenchmarkDrawerProps) 
 
   async function handleDelete() {
     await deleteMutation.mutateAsync({ id });
-    await Promise.all([
-      utils.benchmark.list.invalidate(),
-      utils.benchmark.stats.invalidate(),
-    ]);
+    await Promise.all([utils.benchmark.list.invalidate(), utils.benchmark.stats.invalidate()]);
     onClose();
   }
 
   return (
-    <Drawer open onClose={onClose} title={isNew ? '新建题目' : `编辑题目 #${id}`} widthClassName="w-[720px] max-w-full">
+    <Drawer
+      open
+      onClose={onClose}
+      title={isNew ? '新建题目' : `编辑题目 #${id}`}
+      widthClassName="w-[720px] max-w-full"
+    >
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4" noValidate>
         {missing.length > 0 ? (
           <output className="block rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
@@ -212,19 +232,34 @@ export function BenchmarkDrawer({ id, onClose, onSaved }: BenchmarkDrawerProps) 
             <Select {...form.register('screenSize')}>
               <option value="">—</option>
               {SCREEN_SIZE_OPTIONS.map((v) => (
-                <option key={v} value={v}>{v}</option>
+                <option key={v} value={v}>
+                  {v}
+                </option>
               ))}
             </Select>
           </Field>
         </div>
-        <Field label="场景">
-          <Select {...form.register('scene')}>
-            <option value="">—</option>
-            {SCENE_OPTIONS.map((v) => (
-              <option key={v} value={v}>{v}</option>
-            ))}
-          </Select>
-        </Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="场景">
+            <Select {...form.register('scene')}>
+              <option value="">—</option>
+              {SCENE_OPTIONS.map((v) => (
+                <option key={v} value={v}>
+                  {v}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="难度">
+            <Select {...form.register('difficulty')}>
+              {DIFFICULTY_OPTIONS.map((v) => (
+                <option key={v || 'none'} value={v}>
+                  {v || '—'}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        </div>
         <Field label="文字提示词">
           <Textarea rows={3} {...form.register('textPrompt')} />
         </Field>
@@ -238,7 +273,9 @@ export function BenchmarkDrawer({ id, onClose, onSaved }: BenchmarkDrawerProps) 
                 <button
                   key={v ?? 'null'}
                   type="button"
-                  onClick={() => form.setValue('score', v as FormValues['score'], { shouldDirty: true })}
+                  onClick={() =>
+                    form.setValue('score', v as FormValues['score'], { shouldDirty: true })
+                  }
                   className={`flex-1 rounded border px-1 py-1 text-xs font-medium transition-colors ${
                     scoreValue === v
                       ? 'border-[hsl(var(--primary))] bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))]'
@@ -256,7 +293,10 @@ export function BenchmarkDrawer({ id, onClose, onSaved }: BenchmarkDrawerProps) 
           </label>
         </div>
 
-        <section aria-label="媒体" className="space-y-3 rounded-md border border-[hsl(var(--border))] p-3">
+        <section
+          aria-label="媒体"
+          className="space-y-3 rounded-md border border-[hsl(var(--border))] p-3"
+        >
           <h3 className="text-sm font-semibold">媒体绑定</h3>
           <MediaPicker
             label="人物图片素材"
@@ -345,7 +385,9 @@ export function BenchmarkDrawer({ id, onClose, onSaved }: BenchmarkDrawerProps) 
             <div />
           )}
           <div className="flex gap-2">
-            <Button type="button" variant="outline" onClick={onClose}>关闭</Button>
+            <Button type="button" variant="outline" onClick={onClose}>
+              关闭
+            </Button>
             <Button type="submit" disabled={form.formState.isSubmitting}>
               {form.formState.isSubmitting ? '保存中…' : isNew ? '创建' : '保存'}
             </Button>

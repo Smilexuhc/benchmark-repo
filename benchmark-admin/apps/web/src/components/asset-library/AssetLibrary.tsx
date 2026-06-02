@@ -43,7 +43,11 @@ export type AssetKind = 'character' | 'scene' | 'prop';
 export type AssetLibraryProps = {
   kind: AssetKind;
   filterFields: FilterField[];
-  renderDrawer?: (props: { id: number; onClose: () => void; onCreated: () => void }) => React.ReactNode;
+  renderDrawer?: (props: {
+    id: number;
+    onClose: () => void;
+    onCreated: () => void;
+  }) => React.ReactNode;
   selectionMode?: 'none' | 'multi';
   selectedIds?: number[];
   onSelectionChange?: (ids: number[]) => void;
@@ -86,6 +90,15 @@ export function AssetLibrary({
     },
   );
 
+  // Export reflects the active filter slice — same kind/search/filters as the
+  // list, so the ZIP matches what's on screen rather than always the whole library.
+  const exportUrl = trpc.exports.getDownloadUrl.useQuery({
+    kind,
+    search: debouncedSearch || undefined,
+    deletedOnly: filterState.deletedOnly || undefined,
+    filters: serverFilters,
+  });
+
   const utils = trpc.useUtils();
 
   function refetch() {
@@ -124,6 +137,16 @@ export function AssetLibrary({
           </div>
           <div className="flex items-center gap-2">
             {headerActions}
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={!exportUrl.data}
+              onClick={() => {
+                if (exportUrl.data) window.location.href = exportUrl.data.url;
+              }}
+            >
+              导出 ZIP
+            </Button>
             {renderDrawer ? (
               <Button size="sm" onClick={() => setDrawerId('new')}>
                 新建
@@ -228,6 +251,7 @@ function VirtualizedCardGrid({
   return (
     <div ref={scrollRef} className="overflow-auto pr-1" style={{ height: SCROLL_HEIGHT }}>
       <div
+        // biome-ignore lint/a11y/useSemanticElements: virtualizer needs an absolutely-positioned div; role conveys list semantics
         role="list"
         aria-label="资源卡片"
         className="relative w-full"
@@ -246,6 +270,7 @@ function VirtualizedCardGrid({
               }}
             >
               {rowItems.map((asset) => (
+                // biome-ignore lint/a11y/useSemanticElements: grid cell wrapper inside a role="list"; div keeps virtualizer layout intact
                 <div key={asset.id} role="listitem">
                   <AssetCard
                     asset={asset}

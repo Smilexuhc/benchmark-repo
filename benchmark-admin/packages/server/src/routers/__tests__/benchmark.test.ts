@@ -383,8 +383,8 @@ describe('benchmarkRouter', () => {
     });
   });
 
-  describe('list payload trimming', () => {
-    it('list omits media and comments; get still returns them', async () => {
+  describe('list payload shape', () => {
+    it('list returns media (for thumbnails) but omits comments; get returns both', async () => {
       const charImgId = await createImageAsset(
         caller,
         'images/list-trim-abc123def456789012345678901234.png',
@@ -400,12 +400,69 @@ describe('benchmarkRouter', () => {
       const { items } = await caller.benchmark.list({ filters: { shotType: 'trim' } });
       const listed = items.find((i: { id: number }) => i.id === item.id);
       expect(listed).toBeDefined();
-      expect((listed as Record<string, unknown>).media).toBeUndefined();
+      // List carries media so the grid can render thumbnails / video preview (gap #5)…
+      expect(
+        (listed as { media: { character_image: unknown[] } }).media.character_image.length,
+      ).toBe(1);
+      // …but comments stay out of the list payload — only the drawer needs them.
       expect((listed as Record<string, unknown>).comments).toBeUndefined();
 
       const fetched = await caller.benchmark.get({ id: item.id });
       expect(fetched.media.character_image.length).toBe(1);
       expect(fetched.comments.length).toBe(1);
+    });
+  });
+
+  describe('list filters and search (legacy parity)', () => {
+    it('filters by difficulty, needsRevision, and hasComments', async () => {
+      const hard = await caller.benchmark.create({
+        shotType: 'flt',
+        difficulty: '难',
+        needsRevision: true,
+        media: emptyMedia,
+      });
+      const easy = await caller.benchmark.create({
+        shotType: 'flt',
+        difficulty: '易',
+        needsRevision: false,
+        media: emptyMedia,
+      });
+      await caller.benchmark.comments.add({ itemId: hard.id, body: 'needs another look' });
+
+      const byDifficulty = await caller.benchmark.list({ filters: { difficulty: '难' } });
+      const hardIds = byDifficulty.items.map((i: { id: number }) => i.id);
+      expect(hardIds).toContain(hard.id);
+      expect(hardIds).not.toContain(easy.id);
+
+      const needsRev = await caller.benchmark.list({
+        filters: { shotType: 'flt', needsRevision: true },
+      });
+      expect(needsRev.items.map((i: { id: number }) => i.id)).toEqual([hard.id]);
+
+      const withComments = await caller.benchmark.list({
+        filters: { shotType: 'flt', hasComments: true },
+      });
+      expect(withComments.items.map((i: { id: number }) => i.id)).toEqual([hard.id]);
+
+      const withoutComments = await caller.benchmark.list({
+        filters: { shotType: 'flt', hasComments: false },
+      });
+      expect(withoutComments.items.map((i: { id: number }) => i.id)).toEqual([easy.id]);
+    });
+
+    it('search matches any scalar text field, not just the prompt', async () => {
+      const item = await caller.benchmark.create({
+        shotType: 'searchable-shot',
+        judgingCriteria: 'must be sharp',
+        media: emptyMedia,
+      });
+
+      // The term lives only in judgingCriteria — a field legacy search also covers.
+      const hit = await caller.benchmark.list({ search: 'must be sharp' });
+      expect(hit.items.map((i: { id: number }) => i.id)).toContain(item.id);
+
+      const miss = await caller.benchmark.list({ search: 'no-such-text-zzz' });
+      expect(miss.items.map((i: { id: number }) => i.id)).not.toContain(item.id);
     });
   });
 });

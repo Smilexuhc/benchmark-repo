@@ -15,6 +15,7 @@ type BenchmarkRow = {
   manualTag: string;
   scene: string;
   screenSize: string;
+  difficulty: string;
   textPrompt: string;
   judgingCriteria: string;
   score: number | null;
@@ -23,9 +24,9 @@ type BenchmarkRow = {
     character_image: { mediaId: number }[];
     scene_image: { mediaId: number }[];
     prop_image: { mediaId: number }[];
-    audio_input: { mediaId: number } | null;
-    video_input: { mediaId: number } | null;
-    video_output: { mediaId: number } | null;
+    audio_input: { mediaId: number }[];
+    video_input: { mediaId: number }[];
+    video_output: { mediaId: number }[];
   };
 };
 
@@ -37,7 +38,8 @@ let live: BenchmarkRow = {
   manualTag: '',
   scene: 'original scene',
   screenSize: '',
-  textPrompt: '',
+  difficulty: '',
+  textPrompt: 'original prompt',
   judgingCriteria: '',
   score: null,
   needsRevision: false,
@@ -45,9 +47,9 @@ let live: BenchmarkRow = {
     character_image: [],
     scene_image: [],
     prop_image: [],
-    audio_input: null,
-    video_input: null,
-    video_output: null,
+    audio_input: [],
+    video_input: [],
+    video_output: [],
   },
 };
 
@@ -72,17 +74,15 @@ describe('BenchmarkDrawer', () => {
   it('keeps unsaved edits when fresh server data arrives', async () => {
     const onClose = vi.fn();
     const onSaved = vi.fn();
-    const { rerender } = render(
-      <BenchmarkDrawer id={42} onClose={onClose} onSaved={onSaved} />,
-    );
+    const { rerender } = render(<BenchmarkDrawer id={42} onClose={onClose} onSaved={onSaved} />);
 
     const user = userEvent.setup();
-    const scene = screen.getByDisplayValue('original scene');
-    await user.clear(scene);
-    await user.type(scene, 'USER EDIT');
+    const prompt = screen.getByDisplayValue('original prompt');
+    await user.clear(prompt);
+    await user.type(prompt, 'USER EDIT');
 
     // Server-side change underneath.
-    live = { ...live, scene: 'stale server scene' };
+    live = { ...live, textPrompt: 'stale server prompt' };
     await act(async () => {
       rerender(<BenchmarkDrawer id={42} onClose={onClose} onSaved={onSaved} />);
     });

@@ -16,6 +16,7 @@ const MIGRATION_FILES = [
   '0001_add_comment_index.sql',
   '0002_decouple_media.sql',
   '0003_soft_delete_indexes.sql',
+  '0004_add_difficulty.sql',
 ];
 
 type TestDb = ReturnType<typeof drizzle<typeof schema>>;

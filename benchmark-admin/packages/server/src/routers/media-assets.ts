@@ -37,6 +37,7 @@ export const mediaAssetsRouter = t.router({
       z.object({
         kind: z.enum(['character', 'scene', 'prop']).optional(),
         mediaType: z.enum(['image', 'audio', 'video']).optional(),
+        search: z.string().optional(),
         dedup: z.boolean().default(false),
         cursor: z.number().int().positive().optional(),
       }),
@@ -50,6 +51,14 @@ export const mediaAssetsRouter = t.router({
       const joinConditions: SQL[] = [mediaVisible()];
       if (input.kind) joinConditions.push(eq(assets.kind, input.kind));
       if (input.mediaType) joinConditions.push(eq(media.mediaType, input.mediaType));
+      const searchTerm = input.search?.trim();
+      if (searchTerm) {
+        const like = `%${searchTerm}%`;
+        // Match the file's display title, its object key, or the source label.
+        joinConditions.push(
+          sql`(${media.title} ILIKE ${like} OR ${media.objectKey} ILIKE ${like} OR ${media.source} ILIKE ${like})`,
+        );
+      }
       if (input.cursor) joinConditions.push(lt(media.id, input.cursor));
 
       if (input.dedup) {
@@ -65,6 +74,9 @@ export const mediaAssetsRouter = t.router({
         // narrows to that asset taxonomy (and thus drops standalone rows).
         const kindClause = input.kind ? sql` AND a.kind = ${input.kind}` : sql``;
         const mtClause = input.mediaType ? sql` AND ai.media_type = ${input.mediaType}` : sql``;
+        const searchClause = searchTerm
+          ? sql` AND (ai.title ILIKE ${`%${searchTerm}%`} OR ai.object_key ILIKE ${`%${searchTerm}%`} OR ai.source ILIKE ${`%${searchTerm}%`})`
+          : sql``;
         const cursorClause = input.cursor ? sql` WHERE dedup.id < ${input.cursor}` : sql``;
 
         const query = sql`
