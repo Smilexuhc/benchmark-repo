@@ -37,7 +37,7 @@ export function BatchToolbar({ selectedIds }: BatchToolbarProps) {
     <>
       <div className="flex items-center gap-2">
         <Button size="sm" variant="outline" onClick={() => setOpen(true)}>
-          批量重生成
+          批量生成
         </Button>
       </div>
 

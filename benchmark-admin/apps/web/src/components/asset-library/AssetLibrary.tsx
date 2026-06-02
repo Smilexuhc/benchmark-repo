@@ -1,5 +1,4 @@
-import { useVirtualizer } from '@tanstack/react-virtual';
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useDebounce } from 'use-debounce';
 import { Button } from '@/components/ui/button';
 import { trpc } from '@/lib/trpc';
@@ -7,36 +6,8 @@ import { AssetCard, type AssetCardData } from './AssetCard';
 import { type FilterField, FilterPanel } from './FilterPanel';
 import { buildServerFilters, useFilters } from './useFilters';
 
-// Card aspect-ratio (square image) + name/meta + gap; tune-by-eye is fine —
-// the virtualizer uses this as an estimate and adapts to measured heights.
-const ROW_ESTIMATE_PX = 280;
-const ROW_GAP_PX = 12;
 const SCROLL_HEIGHT = 'calc(100vh - 220px)';
 const NEAR_BOTTOM_PX = 360;
-
-// @tanstack/react-virtual re-exports `VirtualItem` via `export *`, which our
-// `verbatimModuleSyntax` setup doesn't surface for direct import. Mirror the
-// fields we actually read so the `.map(...)` callback has a real param type.
-type VRow = { key: string | number; index: number; start: number };
-
-// Tailwind grid-cols breakpoints used in the markup: default 2, sm:3, lg:4.
-// Match here so the virtualizer slices items into the right per-row count.
-function useResponsiveColumnCount(ref: React.RefObject<HTMLElement | null>) {
-  const [cols, setCols] = useState(4);
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    function update() {
-      const width = el?.clientWidth ?? 0;
-      setCols(width >= 768 ? 4 : width >= 560 ? 3 : 2);
-    }
-    update();
-    const ro = new ResizeObserver(update);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [ref]);
-  return cols;
-}
 
 export type AssetKind = 'character' | 'scene' | 'prop';
 
@@ -100,6 +71,7 @@ export function AssetLibrary({
   });
 
   const utils = trpc.useUtils();
+  const generateImage = trpc.ai.generateImage.useMutation();
 
   function refetch() {
     utils.assets.list.invalidate({ kind });
@@ -114,8 +86,20 @@ export function AssetLibrary({
     setDrawerId(id);
   }
 
+  function onEdit(id: number) {
+    setDrawerId(id);
+  }
+
   const items: AssetCardData[] =
     list.data?.pages.flatMap((p: { items: AssetCardData[] }) => p.items) ?? [];
+  const total = list.data?.pages[0]?.total ?? items.length;
+
+  async function onGenerateImage(asset: AssetCardData) {
+    const prompt = asset.data?.prompt;
+    if (!prompt) return;
+    await generateImage.mutateAsync({ kind: asset.kind, id: asset.id, prompt });
+    await refetch();
+  }
 
   return (
     <div className="grid grid-cols-[240px_1fr] gap-6">
@@ -133,10 +117,9 @@ export function AssetLibrary({
       <div>
         <header className="mb-4 flex items-center justify-between">
           <div className="text-sm text-[hsl(var(--muted-foreground))]">
-            共 {items.length} 条{list.isFetching ? '（加载中…）' : ''}
+            命中 {total} 个{list.isFetching ? '（加载中…）' : ''}
           </div>
           <div className="flex items-center gap-2">
-            {headerActions}
             <Button
               size="sm"
               variant="outline"
@@ -145,11 +128,12 @@ export function AssetLibrary({
                 if (exportUrl.data) window.location.href = exportUrl.data.url;
               }}
             >
-              导出 ZIP
+              导出资产包
             </Button>
+            {headerActions}
             {renderDrawer ? (
               <Button size="sm" onClick={() => setDrawerId('new')}>
-                新建
+                {kind === 'character' ? '新建角色' : kind === 'scene' ? '新建场景' : '新建道具'}
               </Button>
             ) : null}
           </div>
@@ -166,10 +150,13 @@ export function AssetLibrary({
             暂无结果
           </div>
         ) : (
-          <VirtualizedCardGrid
+          <AssetList
             items={items}
             selectedIds={selectedIds}
             onCardClick={onCardClick}
+            onEdit={onEdit}
+            selectionMode={selectionMode === 'multi'}
+            onGenerateImage={onGenerateImage}
             hasNextPage={list.hasNextPage ?? false}
             isFetchingNextPage={list.isFetchingNextPage}
             fetchNextPage={list.fetchNextPage}
@@ -206,33 +193,30 @@ function DrawerHost({
   return <>{render({ id, onClose, onCreated })}</>;
 }
 
-type VirtualizedCardGridProps = {
+type AssetListProps = {
   items: AssetCardData[];
   selectedIds: number[];
   onCardClick: (id: number) => void;
+  onEdit: (id: number) => void;
+  selectionMode: boolean;
+  onGenerateImage: (asset: AssetCardData) => Promise<void>;
   hasNextPage: boolean;
   isFetchingNextPage: boolean;
   fetchNextPage: () => unknown;
 };
 
-function VirtualizedCardGrid({
+function AssetList({
   items,
   selectedIds,
   onCardClick,
+  onEdit,
+  selectionMode,
+  onGenerateImage,
   hasNextPage,
   isFetchingNextPage,
   fetchNextPage,
-}: VirtualizedCardGridProps) {
+}: AssetListProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const cols = useResponsiveColumnCount(scrollRef);
-  const rowCount = Math.ceil(items.length / cols);
-
-  const rowVirtualizer = useVirtualizer<HTMLDivElement, HTMLDivElement>({
-    count: rowCount,
-    getScrollElement: () => scrollRef.current,
-    estimateSize: () => ROW_ESTIMATE_PX + ROW_GAP_PX,
-    overscan: 3,
-  });
 
   // Auto-fetch next page as the user nears the bottom of the scroll container.
   useEffect(() => {
@@ -250,39 +234,20 @@ function VirtualizedCardGrid({
 
   return (
     <div ref={scrollRef} className="overflow-auto pr-1" style={{ height: SCROLL_HEIGHT }}>
-      <div
-        // biome-ignore lint/a11y/useSemanticElements: virtualizer needs an absolutely-positioned div; role conveys list semantics
-        role="list"
-        aria-label="资源卡片"
-        className="relative w-full"
-        style={{ height: `${rowVirtualizer.getTotalSize()}px` }}
-      >
-        {rowVirtualizer.getVirtualItems().map((virtualRow: VRow) => {
-          const start = virtualRow.index * cols;
-          const rowItems = items.slice(start, start + cols);
-          return (
-            <div
-              key={virtualRow.key}
-              className="absolute left-0 right-0 grid gap-3"
-              style={{
-                transform: `translateY(${virtualRow.start}px)`,
-                gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
-              }}
-            >
-              {rowItems.map((asset) => (
-                // biome-ignore lint/a11y/useSemanticElements: grid cell wrapper inside a role="list"; div keeps virtualizer layout intact
-                <div key={asset.id} role="listitem">
-                  <AssetCard
-                    asset={asset}
-                    onClick={onCardClick}
-                    selected={selectedIds.includes(asset.id)}
-                  />
-                </div>
-              ))}
-            </div>
-          );
-        })}
-      </div>
+      <ul aria-label="资源列表" className="flex flex-col gap-3">
+        {items.map((asset) => (
+          <li key={asset.id}>
+            <AssetCard
+              asset={asset}
+              onClick={onCardClick}
+              onEdit={onEdit}
+              selected={selectedIds.includes(asset.id)}
+              selectionMode={selectionMode}
+              onGenerateImage={onGenerateImage}
+            />
+          </li>
+        ))}
+      </ul>
       {hasNextPage ? (
         <div className="mt-4 flex justify-center pb-2">
           <Button

@@ -48,8 +48,8 @@ vi.mock('@/lib/trpc', () =>
   createTrpcMock({
     infiniteQuery: {
       'assets.list': (_input, cursor) => {
-        if (cursor == null) return { items: PAGE_ONE, nextCursor: 81 };
-        return { items: PAGE_TWO, nextCursor: null };
+        if (cursor == null) return { items: PAGE_ONE, total: 21, nextCursor: 81 };
+        return { items: PAGE_TWO, total: 21, nextCursor: null };
       },
     },
   }),
@@ -66,6 +66,7 @@ describe('AssetLibrary pagination', () => {
     );
 
     expect(screen.getByText('First page #1')).toBeInTheDocument();
+    expect(screen.getByText('命中 21 个')).toBeInTheDocument();
     expect(screen.queryByText('Second-page only')).toBeNull();
 
     const more = screen.getByRole('button', { name: /加载更多/ });
