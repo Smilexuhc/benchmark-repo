@@ -218,6 +218,10 @@ const ItemScalars = z.object({
   manualTag: z.string().default(''),
   scene: z.string().default(''),
   screenSize: z.string().default(''),
+  categoryL1: z.string().default(''),
+  categoryL2: z.string().default(''),
+  categoryL3: z.string().default(''),
+  categoryDefinition: z.string().default(''),
   difficulty: z.enum(['', '易', '中', '难']).default(''),
   textPrompt: z.string().default(''),
   judgingCriteria: z.string().default(''),
@@ -239,6 +243,9 @@ export const benchmarkRouter = t.router({
             shotType: z.string().optional(),
             taskType: z.string().optional(),
             questionType: z.string().optional(),
+            categoryL1: z.string().optional(),
+            categoryL2: z.string().optional(),
+            categoryL3: z.string().optional(),
             scene: z.string().optional(),
             screenSize: z.string().optional(),
             difficulty: z.enum(['', '易', '中', '难']).optional(),
@@ -272,6 +279,10 @@ export const benchmarkRouter = t.router({
             OR ${videoBenchmarkItems.questionType} ILIKE ${term}
             OR ${videoBenchmarkItems.manualTag} ILIKE ${term}
             OR ${videoBenchmarkItems.screenSize} ILIKE ${term}
+            OR ${videoBenchmarkItems.categoryL1} ILIKE ${term}
+            OR ${videoBenchmarkItems.categoryL2} ILIKE ${term}
+            OR ${videoBenchmarkItems.categoryL3} ILIKE ${term}
+            OR ${videoBenchmarkItems.categoryDefinition} ILIKE ${term}
             OR ${videoBenchmarkItems.judgingCriteria} ILIKE ${term})`,
         );
       }
@@ -280,6 +291,9 @@ export const benchmarkRouter = t.router({
       if (f?.taskType) baseConditions.push(eq(videoBenchmarkItems.taskType, f.taskType));
       if (f?.questionType)
         baseConditions.push(eq(videoBenchmarkItems.questionType, f.questionType));
+      if (f?.categoryL1) baseConditions.push(eq(videoBenchmarkItems.categoryL1, f.categoryL1));
+      if (f?.categoryL2) baseConditions.push(eq(videoBenchmarkItems.categoryL2, f.categoryL2));
+      if (f?.categoryL3) baseConditions.push(eq(videoBenchmarkItems.categoryL3, f.categoryL3));
       if (f?.scene) baseConditions.push(eq(videoBenchmarkItems.scene, f.scene));
       if (f?.screenSize) baseConditions.push(eq(videoBenchmarkItems.screenSize, f.screenSize));
       if (f?.difficulty) baseConditions.push(eq(videoBenchmarkItems.difficulty, f.difficulty));
@@ -472,15 +486,22 @@ export const benchmarkRouter = t.router({
     }),
 
   stats: protectedProcedure.query(async () => {
+    // Legacy parity (backend/db.py video_benchmark_stats): group by the V3 category
+    // path. Empty-category rows group under '' and are still counted.
     const groups = await db
       .select({
-        shotType: videoBenchmarkItems.shotType,
-        questionType: videoBenchmarkItems.questionType,
+        categoryL1: videoBenchmarkItems.categoryL1,
+        categoryL2: videoBenchmarkItems.categoryL2,
+        categoryL3: videoBenchmarkItems.categoryL3,
         count: sql<number>`count(*)::int`,
       })
       .from(videoBenchmarkItems)
       .where(isNull(videoBenchmarkItems.deletedAt))
-      .groupBy(videoBenchmarkItems.shotType, videoBenchmarkItems.questionType);
+      .groupBy(
+        videoBenchmarkItems.categoryL1,
+        videoBenchmarkItems.categoryL2,
+        videoBenchmarkItems.categoryL3,
+      );
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -492,8 +513,9 @@ export const benchmarkRouter = t.router({
 
     return {
       groups: groups.map((g) => ({
-        shotType: g.shotType,
-        questionType: g.questionType,
+        categoryL1: g.categoryL1,
+        categoryL2: g.categoryL2,
+        categoryL3: g.categoryL3,
         count: g.count,
       })),
       todayNew: todayRow?.count ?? 0,

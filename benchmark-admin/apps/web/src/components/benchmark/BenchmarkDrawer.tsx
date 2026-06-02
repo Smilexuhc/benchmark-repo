@@ -7,6 +7,7 @@ import {
   SHOT_TYPES,
   TASK_TYPES,
 } from '@benchmark-admin/shared/constants/question-types';
+import { CATEGORY_TREE, definitionFor } from '@benchmark-admin/shared/benchmark/categoryTree';
 import { Button } from '@/components/ui/button';
 import { Drawer } from '@/components/ui/drawer';
 import { Select } from '@/components/ui/select';
@@ -40,6 +41,10 @@ const FormSchema = z.object({
   manualTag: z.string(),
   scene: z.string(),
   screenSize: z.string(),
+  categoryL1: z.string(),
+  categoryL2: z.string(),
+  categoryL3: z.string(),
+  categoryDefinition: z.string(),
   difficulty: z.enum(['', '易', '中', '难']),
   textPrompt: z.string(),
   judgingCriteria: z.string(),
@@ -58,6 +63,10 @@ const EMPTY: FormValues = {
   manualTag: '',
   scene: '',
   screenSize: '',
+  categoryL1: '',
+  categoryL2: '',
+  categoryL3: '',
+  categoryDefinition: '',
   difficulty: '',
   textPrompt: '',
   judgingCriteria: '',
@@ -121,6 +130,10 @@ export function BenchmarkDrawer({ id, onClose, onSaved }: BenchmarkDrawerProps) 
           manualTag: get.data.manualTag,
           scene: get.data.scene,
           screenSize: get.data.screenSize,
+          categoryL1: get.data.categoryL1,
+          categoryL2: get.data.categoryL2,
+          categoryL3: get.data.categoryL3,
+          categoryDefinition: get.data.categoryDefinition,
           difficulty: get.data.difficulty as FormValues['difficulty'],
           textPrompt: get.data.textPrompt,
           judgingCriteria: get.data.judgingCriteria,
@@ -145,6 +158,36 @@ export function BenchmarkDrawer({ id, onClose, onSaved }: BenchmarkDrawerProps) 
 
   const shotType = form.watch('shotType');
   const scoreValue = form.watch('score');
+
+  // V3 category cascade (l1 → l2 → l3). Options derive from the shared tree;
+  // selecting a parent resets its descendants, and choosing an l3 leaf auto-fills
+  // the (read-only) definition from that leaf.
+  const categoryL1 = form.watch('categoryL1');
+  const categoryL2 = form.watch('categoryL2');
+  const categoryL3 = form.watch('categoryL3');
+  const categoryDefinition = form.watch('categoryDefinition');
+  const l1Node = CATEGORY_TREE.find((o) => o.value === categoryL1);
+  const l2Options = l1Node?.children ?? [];
+  const l2Node = l2Options.find((o) => o.value === categoryL2);
+  const l3Options = l2Node?.children ?? [];
+
+  function selectCategoryL1(value: string) {
+    form.setValue('categoryL1', value, { shouldDirty: true });
+    form.setValue('categoryL2', '', { shouldDirty: true });
+    form.setValue('categoryL3', '', { shouldDirty: true });
+    form.setValue('categoryDefinition', '', { shouldDirty: true });
+  }
+  function selectCategoryL2(value: string) {
+    form.setValue('categoryL2', value, { shouldDirty: true });
+    form.setValue('categoryL3', '', { shouldDirty: true });
+    form.setValue('categoryDefinition', '', { shouldDirty: true });
+  }
+  function selectCategoryL3(value: string) {
+    form.setValue('categoryL3', value, { shouldDirty: true });
+    form.setValue('categoryDefinition', definitionFor(categoryL1, categoryL2, value), {
+      shouldDirty: true,
+    });
+  }
 
   // Non-blocking completeness feedback: the product wants curated items, but an
   // unscored / incomplete item is a valid in-progress state, so we surface an
@@ -223,6 +266,58 @@ export function BenchmarkDrawer({ id, onClose, onSaved }: BenchmarkDrawerProps) 
             </Select>
           </Field>
         </div>
+
+        <section
+          aria-label="新分类"
+          className="space-y-3 rounded-md border border-[hsl(var(--border))] p-3"
+        >
+          <h3 className="text-sm font-semibold">新分类</h3>
+          <div className="grid grid-cols-3 gap-3">
+            <Field label="一级分类">
+              <Select value={categoryL1} onChange={(e) => selectCategoryL1(e.target.value)}>
+                <option value="">—</option>
+                {CATEGORY_TREE.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="二级分类">
+              <Select
+                value={categoryL2}
+                disabled={!categoryL1}
+                onChange={(e) => selectCategoryL2(e.target.value)}
+              >
+                <option value="">—</option>
+                {l2Options.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="三级分类">
+              <Select
+                value={categoryL3}
+                disabled={!categoryL2}
+                onChange={(e) => selectCategoryL3(e.target.value)}
+              >
+                <option value="">—</option>
+                {l3Options.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          </div>
+          {categoryDefinition ? (
+            <p className="text-xs text-[hsl(var(--muted-foreground))]">
+              出题意图：{categoryDefinition}
+            </p>
+          ) : null}
+        </section>
 
         <div className="grid grid-cols-2 gap-3">
           <Field label="测试点人工标注">

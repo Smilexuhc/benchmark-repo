@@ -9,6 +9,7 @@ import {
   SHOT_TYPES,
   TASK_TYPES,
 } from '@benchmark-admin/shared/constants/question-types';
+import { CATEGORY_TREE } from '@benchmark-admin/shared/benchmark/categoryTree';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { parseAsBoolean, parseAsString, useQueryStates } from 'nuqs';
 import { useEffect, useRef, useState } from 'react';
@@ -23,7 +24,7 @@ import { BenchmarkDrawer } from './BenchmarkDrawer';
 const ROW_HEIGHT = 68;
 const SCROLL_AREA_HEIGHT = 'calc(100vh - 280px)';
 const NEAR_BOTTOM_PX = 240;
-const GRID_COLS = 'grid-cols-[56px_180px_88px_88px_1fr_56px_104px_64px]';
+const GRID_COLS = 'grid-cols-[56px_160px_150px_80px_88px_1fr_56px_104px_64px]';
 
 type VRow = { key: string | number; index: number; start: number };
 
@@ -34,6 +35,9 @@ const SCORE_OPTIONS = ['0', '1', '2', '3', '4', '5'];
 
 const PARSERS = {
   search: parseAsString.withDefault(''),
+  categoryL1: parseAsString.withDefault(''),
+  categoryL2: parseAsString.withDefault(''),
+  categoryL3: parseAsString.withDefault(''),
   shotType: parseAsString.withDefault(''),
   taskType: parseAsString.withDefault(''),
   questionType: parseAsString.withDefault(''),
@@ -89,6 +93,9 @@ export function BenchmarkList() {
     {
       search: debouncedSearch || undefined,
       filters: {
+        categoryL1: state.categoryL1 || undefined,
+        categoryL2: state.categoryL2 || undefined,
+        categoryL3: state.categoryL3 || undefined,
         shotType: state.shotType || undefined,
         taskType: state.taskType || undefined,
         questionType: state.questionType || undefined,
@@ -119,10 +126,19 @@ export function BenchmarkList() {
   const exportUrl = trpc.exports.getDownloadUrl.useQuery({
     kind: 'benchmark',
     search: debouncedSearch || undefined,
+    categoryL1: state.categoryL1 || undefined,
+    categoryL2: state.categoryL2 || undefined,
+    categoryL3: state.categoryL3 || undefined,
     shotType: state.shotType || undefined,
     questionType: state.questionType || undefined,
     needsRevision: state.needsRevision || undefined,
   });
+
+  // Cascade options for the category filter — children narrow as the parent is chosen.
+  const l1Node = CATEGORY_TREE.find((o) => o.value === state.categoryL1);
+  const l2Options = l1Node?.children ?? [];
+  const l2Node = l2Options.find((o) => o.value === state.categoryL2);
+  const l3Options = l2Node?.children ?? [];
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const rowVirtualizer = useVirtualizer<HTMLDivElement, HTMLDivElement>({
@@ -157,6 +173,47 @@ export function BenchmarkList() {
           value={state.search}
           onChange={(e) => setState({ search: e.target.value })}
         />
+        <Select
+          aria-label="一级分类"
+          value={state.categoryL1}
+          onChange={(e) => setState({ categoryL1: e.target.value, categoryL2: '', categoryL3: '' })}
+          className="max-w-[130px]"
+        >
+          <option value="">一级分类</option>
+          {CATEGORY_TREE.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </Select>
+        <Select
+          aria-label="二级分类"
+          value={state.categoryL2}
+          onChange={(e) => setState({ categoryL2: e.target.value, categoryL3: '' })}
+          disabled={!state.categoryL1}
+          className="max-w-[170px]"
+        >
+          <option value="">二级分类</option>
+          {l2Options.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </Select>
+        <Select
+          aria-label="三级分类"
+          value={state.categoryL3}
+          onChange={(e) => setState({ categoryL3: e.target.value })}
+          disabled={!state.categoryL2}
+          className="max-w-[170px]"
+        >
+          <option value="">三级分类</option>
+          {l3Options.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </Select>
         <Select
           aria-label="镜头类型"
           value={state.shotType}
@@ -305,6 +362,7 @@ export function BenchmarkList() {
       >
         <div>ID</div>
         <div>媒体</div>
+        <div>分类</div>
         <div>镜头</div>
         <div>题目类型</div>
         <div>场景</div>
@@ -372,6 +430,9 @@ export function BenchmarkList() {
                     {images.length === 0 && !firstVideoUrl ? (
                       <span className="text-xs text-[hsl(var(--muted-foreground))]">—</span>
                     ) : null}
+                  </div>
+                  <div className="truncate" title={item.categoryL3 || item.categoryL1 || ''}>
+                    {item.categoryL3 || item.categoryL1 || '—'}
                   </div>
                   <div className="truncate">{item.shotType || '—'}</div>
                   <div className="truncate">{item.questionType || '—'}</div>

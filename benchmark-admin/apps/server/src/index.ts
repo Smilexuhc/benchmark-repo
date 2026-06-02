@@ -181,6 +181,9 @@ server.get<{
     search?: string;
     shotType?: string;
     questionType?: string;
+    categoryL1?: string;
+    categoryL2?: string;
+    categoryL3?: string;
     needsRevision?: string;
     deletedOnly?: string;
     era?: string | string[];
@@ -294,11 +297,18 @@ server.get<{
         OR ${videoBenchmarkItems.questionType} ILIKE ${term}
         OR ${videoBenchmarkItems.manualTag} ILIKE ${term}
         OR ${videoBenchmarkItems.screenSize} ILIKE ${term}
+        OR ${videoBenchmarkItems.categoryL1} ILIKE ${term}
+        OR ${videoBenchmarkItems.categoryL2} ILIKE ${term}
+        OR ${videoBenchmarkItems.categoryL3} ILIKE ${term}
+        OR ${videoBenchmarkItems.categoryDefinition} ILIKE ${term}
         OR ${videoBenchmarkItems.judgingCriteria} ILIKE ${term})`,
     );
   }
   if (q.shotType) conditions.push(eq(videoBenchmarkItems.shotType, q.shotType));
   if (q.questionType) conditions.push(eq(videoBenchmarkItems.questionType, q.questionType));
+  if (q.categoryL1) conditions.push(eq(videoBenchmarkItems.categoryL1, q.categoryL1));
+  if (q.categoryL2) conditions.push(eq(videoBenchmarkItems.categoryL2, q.categoryL2));
+  if (q.categoryL3) conditions.push(eq(videoBenchmarkItems.categoryL3, q.categoryL3));
   if (q.needsRevision === 'true') conditions.push(eq(videoBenchmarkItems.needsRevision, true));
 
   // Fetch benchmark items and their media links for the export.

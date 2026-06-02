@@ -30,6 +30,9 @@ export const exportsRouter = t.router({
         // benchmark-only filters
         shotType: z.string().optional(),
         questionType: z.string().optional(),
+        categoryL1: z.string().optional(),
+        categoryL2: z.string().optional(),
+        categoryL3: z.string().optional(),
         needsRevision: z.boolean().optional(),
         // asset-only filters (multi-select arrays)
         filters: z.record(z.string(), z.array(z.string())).optional(),
@@ -43,6 +46,9 @@ export const exportsRouter = t.router({
       if (input.kind === 'benchmark') {
         if (input.shotType) params.set('shotType', input.shotType);
         if (input.questionType) params.set('questionType', input.questionType);
+        if (input.categoryL1) params.set('categoryL1', input.categoryL1);
+        if (input.categoryL2) params.set('categoryL2', input.categoryL2);
+        if (input.categoryL3) params.set('categoryL3', input.categoryL3);
         if (input.needsRevision) params.set('needsRevision', 'true');
       } else {
         for (const key of ASSET_FILTER_KEYS) {

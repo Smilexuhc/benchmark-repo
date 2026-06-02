@@ -5,3 +5,4 @@ export * from './schemas/benchmark.js';
 export * from './schemas/prompts.js';
 export * from './constants/orderings.js';
 export * from './constants/question-types.js';
+export * from './benchmark/categoryTree.js';

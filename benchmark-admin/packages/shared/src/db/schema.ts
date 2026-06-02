@@ -94,6 +94,12 @@ export const videoBenchmarkItems = pgTable(
     manualTag: text('manual_tag').notNull().default(''),
     scene: text('scene').notNull().default(''),
     screenSize: text('screen_size').notNull().default(''),
+    // V3 category dimension (legacy 0015): three-level classification + the leaf's
+    // definition/intent. Free TEXT, not an enum — valid values live in the UI category tree.
+    categoryL1: text('category_l1').notNull().default(''),
+    categoryL2: text('category_l2').notNull().default(''),
+    categoryL3: text('category_l3').notNull().default(''),
+    categoryDefinition: text('category_definition').notNull().default(''),
     // Legacy difficulty: empty (unset) or one of 易/中/难. Auto-prefixed onto manual_tag as 【难】.
     difficulty: text('difficulty').notNull().default(''),
     textPrompt: text('text_prompt').notNull().default(''),
@@ -108,6 +114,7 @@ export const videoBenchmarkItems = pgTable(
     check('chk_vbi_score', sql`${t.score} IS NULL OR (${t.score} >= 0 AND ${t.score} <= 5)`),
     check('chk_vbi_difficulty', sql`${t.difficulty} IN ('', '易', '中', '难')`),
     index('idx_vbi_shot_question').on(t.shotType, t.questionType),
+    index('idx_vbi_category').on(t.categoryL1, t.categoryL2, t.categoryL3),
     index('idx_vbi_active').on(t.id).where(sql`${t.deletedAt} IS NULL`),
   ],
 );
