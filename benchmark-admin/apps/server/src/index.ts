@@ -7,10 +7,16 @@ import {
   signToken,
   verifyCredentials,
 } from '@benchmark-admin/server/auth';
-import { buildExportZip } from '@benchmark-admin/server/services/exports';
+import {
+  type AssetExportItem,
+  type AssetExportMedia,
+  buildAssetExportZip,
+  buildExportZip,
+} from '@benchmark-admin/server/services/exports';
 import * as storage from '@benchmark-admin/server/services/storage';
 import { validateUpload } from '@benchmark-admin/server/services/upload';
 import {
+  assets,
   media,
   videoBenchmarkItems,
   videoBenchmarkMediaLinks,
@@ -159,7 +165,15 @@ server.post('/api/upload', { preHandler: requireSession }, async (request, reply
 // ── Export ZIP ────────────────────────────────────────────────────────────────
 
 // Valid export kinds — validated to prevent Content-Disposition header injection
-const VALID_EXPORT_KINDS = new Set(['benchmark']);
+const VALID_EXPORT_KINDS = new Set(['benchmark', 'character', 'scene', 'prop']);
+const ASSET_EXPORT_KINDS = new Set(['character', 'scene', 'prop']);
+// Asset filters keyed by JSONB data field vs promoted column.
+const ASSET_DATA_FILTER_KEYS = ['type', 'gender', 'age', 'scene_type', 'mood', 'category'];
+
+function asArray(v: string | string[] | undefined): string[] {
+  if (v === undefined) return [];
+  return Array.isArray(v) ? v : [v];
+}
 
 server.get<{
   Params: { kind: string };
@@ -169,12 +183,96 @@ server.get<{
     questionType?: string;
     needsRevision?: string;
     deletedOnly?: string;
+    era?: string | string[];
+    genre?: string | string[];
+    type?: string | string[];
+    gender?: string | string[];
+    age?: string | string[];
+    scene_type?: string | string[];
+    mood?: string | string[];
+    category?: string | string[];
   };
 }>('/api/export/:kind.zip', { preHandler: requireSession }, async (request, reply) => {
   const { kind } = request.params;
 
   if (!VALID_EXPORT_KINDS.has(kind)) {
     return reply.status(400).send({ error: 'Invalid export kind' });
+  }
+
+  // ── Asset library export (character / scene / prop) ──
+  if (ASSET_EXPORT_KINDS.has(kind)) {
+    const aq = request.query;
+    const assetConditions: SQL[] = [
+      eq(assets.kind, kind),
+      aq.deletedOnly === 'true' ? isNotNull(assets.deletedAt) : isNull(assets.deletedAt),
+    ];
+    if (aq.search?.trim()) {
+      const term = `%${aq.search.trim()}%`;
+      assetConditions.push(
+        sql`(${assets.name} ILIKE ${term} OR cast(${assets.data} as text) ILIKE ${term})`,
+      );
+    }
+    const eraVals = asArray(aq.era);
+    if (eraVals.length) assetConditions.push(inArray(assets.era, eraVals));
+    const genreVals = asArray(aq.genre);
+    if (genreVals.length) assetConditions.push(inArray(assets.genre, genreVals));
+    for (const dataKey of ASSET_DATA_FILTER_KEYS) {
+      const vals = asArray(aq[dataKey as keyof typeof aq] as string | string[] | undefined);
+      if (vals.length) {
+        assetConditions.push(inArray(sql<string>`(${assets.data}->>${dataKey})`, vals));
+      }
+    }
+
+    const assetRows = await db
+      .select()
+      .from(assets)
+      .where(and(...assetConditions));
+    const assetIds = assetRows.map((a) => a.id);
+
+    const assetImages =
+      assetIds.length > 0
+        ? await db
+            .select({ id: media.id, assetId: media.assetId, objectKey: media.objectKey })
+            .from(media)
+            .where(and(inArray(media.assetId, assetIds), isNull(media.deletedAt)))
+            .orderBy(media.id)
+        : [];
+
+    const coverByAsset = new Map<number, number>();
+    for (const a of assetRows) {
+      if (a.coverImageId != null) coverByAsset.set(a.id, a.coverImageId);
+    }
+    const exportMedia: AssetExportMedia[] = assetImages
+      .filter((img): img is typeof img & { assetId: number } => img.assetId !== null)
+      .map((img) => ({
+        assetId: img.assetId,
+        objectKey: img.objectKey,
+        isCover: coverByAsset.get(img.assetId) === img.id,
+      }));
+
+    const exportItems: AssetExportItem[] = assetRows.map((a) => ({
+      id: a.id,
+      kind: a.kind as 'character' | 'scene' | 'prop',
+      name: a.name,
+      era: a.era,
+      genre: a.genre,
+      data: (a.data ?? {}) as Record<string, unknown>,
+    }));
+
+    reply.hijack();
+    reply.raw.writeHead(200, {
+      'Content-Type': 'application/zip',
+      'Content-Disposition': `attachment; filename="${kind}.zip"`,
+    });
+
+    await buildAssetExportZip(
+      kind as 'character' | 'scene' | 'prop',
+      exportItems,
+      exportMedia,
+      reply,
+      request,
+    );
+    return;
   }
 
   // Apply the same filter predicates the benchmark list uses, so an export
@@ -187,8 +285,16 @@ server.get<{
   ];
   if (q.search?.trim()) {
     const term = `%${q.search.trim()}%`;
+    // Mirror benchmark.list: search spans every scalar text field.
     conditions.push(
-      sql`(${videoBenchmarkItems.textPrompt} ILIKE ${term} OR ${videoBenchmarkItems.scene} ILIKE ${term})`,
+      sql`(${videoBenchmarkItems.textPrompt} ILIKE ${term}
+        OR ${videoBenchmarkItems.scene} ILIKE ${term}
+        OR ${videoBenchmarkItems.shotType} ILIKE ${term}
+        OR ${videoBenchmarkItems.taskType} ILIKE ${term}
+        OR ${videoBenchmarkItems.questionType} ILIKE ${term}
+        OR ${videoBenchmarkItems.manualTag} ILIKE ${term}
+        OR ${videoBenchmarkItems.screenSize} ILIKE ${term}
+        OR ${videoBenchmarkItems.judgingCriteria} ILIKE ${term})`,
     );
   }
   if (q.shotType) conditions.push(eq(videoBenchmarkItems.shotType, q.shotType));

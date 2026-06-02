@@ -32,16 +32,57 @@ describe('buildExportZip', () => {
     const { buildExportZip } = await import('../../services/exports/index.js');
 
     const items = [
-      { id: 1, shotType: 'close', taskType: 'A', questionType: 'Q1', manualTag: '', scene: '古城', screenSize: '16:9', textPrompt: 'a prompt', judgingCriteria: 'good', score: 4, needsRevision: false, createdAt: new Date() },
-      { id: 2, shotType: 'wide', taskType: 'B', questionType: 'Q2', manualTag: '', scene: '森林', screenSize: '4:3', textPrompt: 'another prompt', judgingCriteria: 'great', score: 5, needsRevision: false, createdAt: new Date() },
+      {
+        id: 1,
+        shotType: 'close',
+        taskType: 'A',
+        questionType: 'Q1',
+        manualTag: '',
+        scene: '古城',
+        screenSize: '16:9',
+        textPrompt: 'a prompt',
+        judgingCriteria: 'good',
+        score: 4,
+        needsRevision: false,
+        createdAt: new Date(),
+      },
+      {
+        id: 2,
+        shotType: 'wide',
+        taskType: 'B',
+        questionType: 'Q2',
+        manualTag: '',
+        scene: '森林',
+        screenSize: '4:3',
+        textPrompt: 'another prompt',
+        judgingCriteria: 'great',
+        score: 5,
+        needsRevision: false,
+        createdAt: new Date(),
+      },
     ];
     // Exercise multi-image (two char images on item 1), audio, and video roles
     const mediaLinks = [
-      { objectKey: 'images/img1a.png', role: 'character_image', itemId: 1, mediaType: 'image' as const },
-      { objectKey: 'images/img1b.png', role: 'scene_image', itemId: 1, mediaType: 'image' as const },
+      {
+        objectKey: 'images/img1a.png',
+        role: 'character_image',
+        itemId: 1,
+        mediaType: 'image' as const,
+      },
+      {
+        objectKey: 'images/img1b.png',
+        role: 'scene_image',
+        itemId: 1,
+        mediaType: 'image' as const,
+      },
       { objectKey: 'audios/a1.mp3', role: 'audio_input', itemId: 1, mediaType: 'audio' as const },
       { objectKey: 'videos/v1.mp4', role: 'video_output', itemId: 1, mediaType: 'video' as const },
-      { objectKey: 'images/img2.png', role: 'character_image', itemId: 2, mediaType: 'image' as const },
+      {
+        objectKey: 'images/img2.png',
+        role: 'character_image',
+        itemId: 2,
+        mediaType: 'image' as const,
+      },
     ];
 
     // Use a PassThrough to capture zip bytes (simulates Fastify reply.raw)
@@ -69,9 +110,29 @@ describe('buildExportZip', () => {
 
     const { buildExportZip } = await import('../../services/exports/index.js');
 
-    const items = [{ id: 3, shotType: '', taskType: '', questionType: '', manualTag: '', scene: '', screenSize: '', textPrompt: '', judgingCriteria: '', score: null, needsRevision: false, createdAt: new Date() }];
+    const items = [
+      {
+        id: 3,
+        shotType: '',
+        taskType: '',
+        questionType: '',
+        manualTag: '',
+        scene: '',
+        screenSize: '',
+        textPrompt: '',
+        judgingCriteria: '',
+        score: null,
+        needsRevision: false,
+        createdAt: new Date(),
+      },
+    ];
     const mediaLinks = [
-      { objectKey: 'images/missing.png', role: 'character_image', itemId: 3, mediaType: 'image' as const },
+      {
+        objectKey: 'images/missing.png',
+        role: 'character_image',
+        itemId: 3,
+        mediaType: 'image' as const,
+      },
     ];
 
     const sink = new PassThrough();
@@ -81,6 +142,49 @@ describe('buildExportZip', () => {
     await expect(
       buildExportZip('benchmark', items, mediaLinks, fakeReply as never),
     ).resolves.toBeUndefined();
+  });
+});
+
+describe('buildAssetExportZip', () => {
+  it('produces a zip with an XLSX manifest and 原图 entries', async () => {
+    const { buildAssetExportZip } = await import('../../services/exports/index.js');
+
+    const items = [
+      {
+        id: 1,
+        kind: 'character' as const,
+        name: '主角',
+        era: '现代',
+        genre: '剧情',
+        data: { type: '主角', gender: '女', persona: '坚毅' },
+      },
+      {
+        id: 2,
+        kind: 'character' as const,
+        name: '配角',
+        era: null,
+        genre: null,
+        data: {},
+      },
+    ];
+    // Item 1 has a flagged cover (embedded as a thumbnail) plus a second original;
+    // item 2 has a single image that should be used as the fallback cover.
+    const assetMedia = [
+      { assetId: 1, objectKey: 'images/c1-cover.png', isCover: true },
+      { assetId: 1, objectKey: 'images/c1-extra.png', isCover: false },
+      { assetId: 2, objectKey: 'images/c2.jpg', isCover: false },
+    ];
+
+    const sink = new PassThrough();
+    const chunks: Buffer[] = [];
+    sink.on('data', (chunk: Buffer) => chunks.push(chunk));
+
+    await buildAssetExportZip('character', items, assetMedia, { raw: sink } as never);
+
+    const zipBuffer = Buffer.concat(chunks);
+    expect(zipBuffer[0]).toBe(0x50);
+    expect(zipBuffer[1]).toBe(0x4b);
+    expect(zipBuffer.length).toBeGreaterThan(100);
   });
 });
 
@@ -119,5 +223,26 @@ describe('exportsRouter.getDownloadUrl', () => {
     expect(result.url).toContain('search=cat');
     expect(result.url).toContain('shotType=close');
     expect(result.url).toContain('needsRevision=true');
+  });
+
+  it('returns the download URL for an asset kind', async () => {
+    const result = await caller.exports.getDownloadUrl({ kind: 'character' });
+    expect(result.url).toBe('/api/export/character.zip');
+  });
+
+  it('encodes multi-select asset filters as repeated query params', async () => {
+    const result = await caller.exports.getDownloadUrl({
+      kind: 'character',
+      search: 'hero',
+      deletedOnly: true,
+      filters: { era: ['现代', '古代'], gender: ['女'] },
+    });
+    expect(result.url).toContain('/api/export/character.zip?');
+    expect(result.url).toContain('search=hero');
+    expect(result.url).toContain('deletedOnly=true');
+    // Multi-select arrays append one param per value (legacy parity).
+    const params = new URLSearchParams(result.url.split('?')[1]);
+    expect(params.getAll('era')).toEqual(['现代', '古代']);
+    expect(params.getAll('gender')).toEqual(['女']);
   });
 });

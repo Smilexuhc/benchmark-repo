@@ -2,7 +2,7 @@ import { extname } from 'node:path';
 import archiver from 'archiver';
 import ExcelJS from 'exceljs';
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { EXPORT_HEADERS } from '@benchmark-admin/shared/lib/exports/headers';
+import { ASSET_EXPORT_HEADERS, EXPORT_HEADERS } from '@benchmark-admin/shared/lib/exports/headers';
 import * as storage from '../storage/index.js';
 
 export type ExportMediaLink = {
@@ -56,8 +56,7 @@ function completenessLabel(item: Record<string, unknown>, m: ItemMedia | undefin
   if (!String(item.textPrompt ?? '').trim()) missing.push('缺提示词');
   if (!String(item.judgingCriteria ?? '').trim()) missing.push('缺评判标准');
   if (item.score === null || item.score === undefined) missing.push('未评分');
-  const hasInput =
-    !!m && (m.images.length > 0 || m.audioInput !== null || m.videoInput !== null);
+  const hasInput = !!m && (m.images.length > 0 || m.audioInput !== null || m.videoInput !== null);
   if (!hasInput) missing.push('缺输入媒体');
   if (!m || m.videoOutput === null) missing.push('缺输出视频');
   return missing.length === 0 ? '完整' : missing.join('; ');
@@ -134,7 +133,10 @@ export async function buildExportZip(
     };
     ws.addRow(
       Object.fromEntries(
-        keys.map((k) => [k, k in counts ? (counts as Record<string, unknown>)[k] : (item[k] ?? '')]),
+        keys.map((k) => [
+          k,
+          k in counts ? (counts as Record<string, unknown>)[k] : (item[k] ?? ''),
+        ]),
       ),
     );
   }
@@ -147,8 +149,13 @@ export async function buildExportZip(
   for (const [itemId, m] of byItem) {
     const roleCounters: Record<string, number> = {};
     for (const img of m.images) {
-      const n = (roleCounters[img.role] = (roleCounters[img.role] ?? 0) + 1);
-      await appendObjectStream(zip, img.objectKey, `images/${itemId}/${img.role}_${n}${extname(img.objectKey)}`);
+      roleCounters[img.role] = (roleCounters[img.role] ?? 0) + 1;
+      const n = roleCounters[img.role];
+      await appendObjectStream(
+        zip,
+        img.objectKey,
+        `images/${itemId}/${img.role}_${n}${extname(img.objectKey)}`,
+      );
     }
     if (m.audioInput) {
       await appendObjectStream(zip, m.audioInput, `audios/${itemId}${extname(m.audioInput)}`);
@@ -157,7 +164,147 @@ export async function buildExportZip(
       await appendObjectStream(zip, m.videoInput, `videos/${itemId}_input${extname(m.videoInput)}`);
     }
     if (m.videoOutput) {
-      await appendObjectStream(zip, m.videoOutput, `videos/${itemId}_output${extname(m.videoOutput)}`);
+      await appendObjectStream(
+        zip,
+        m.videoOutput,
+        `videos/${itemId}_output${extname(m.videoOutput)}`,
+      );
+    }
+  }
+
+  zip.finalize();
+  return done;
+}
+
+// ── Asset library export ────────────────────────────────────────────────────
+
+export type AssetExportItem = {
+  id: number;
+  kind: 'character' | 'scene' | 'prop';
+  name: string;
+  era: string | null;
+  genre: string | null;
+  data: Record<string, unknown>;
+};
+
+export type AssetExportMedia = {
+  assetId: number;
+  objectKey: string;
+  isCover: boolean;
+};
+
+const IMAGE_EXTENSIONS: Record<string, 'png' | 'jpeg' | 'gif'> = {
+  '.png': 'png',
+  '.jpg': 'jpeg',
+  '.jpeg': 'jpeg',
+  '.gif': 'gif',
+};
+
+function assetCellValue(item: AssetExportItem, key: string, imageCount: number): string | number {
+  switch (key) {
+    case 'id':
+      return item.id;
+    case 'name':
+      return item.name;
+    case 'era':
+      return item.era ?? '';
+    case 'genre':
+      return item.genre ?? '';
+    case 'imageCount':
+      return imageCount;
+    default: {
+      const v = item.data?.[key];
+      if (Array.isArray(v)) return v.join(', ');
+      return v == null ? '' : String(v);
+    }
+  }
+}
+
+// Builds an asset-library ZIP: an XLSX manifest (one sheet, kind-specific columns
+// + an embedded cover thumbnail per row) plus a 原图/ folder streaming every
+// original image grouped by asset. Mirrors the legacy character/scene/prop export.
+export async function buildAssetExportZip(
+  kind: 'character' | 'scene' | 'prop',
+  items: AssetExportItem[],
+  assetMedia: AssetExportMedia[],
+  reply: FastifyReply,
+  request?: FastifyRequest,
+): Promise<void> {
+  const zip = archiver('zip', { zlib: { level: 6 } });
+  // biome-ignore lint/suspicious/noExplicitAny: Fastify raw ServerResponse
+  zip.pipe(reply.raw as any);
+
+  const done = new Promise<void>((resolve, reject) => {
+    zip.on('finish', resolve);
+    zip.on('error', (err) => {
+      reply.raw.destroy(err);
+      reject(err);
+    });
+  });
+
+  if (request) {
+    request.raw.on('close', () => {
+      zip.abort();
+    });
+  }
+
+  // Group media by asset, tracking the cover separately.
+  const imagesByAsset = new Map<number, AssetExportMedia[]>();
+  const coverByAsset = new Map<number, AssetExportMedia>();
+  for (const m of assetMedia) {
+    const list = imagesByAsset.get(m.assetId) ?? [];
+    list.push(m);
+    imagesByAsset.set(m.assetId, list);
+    if (m.isCover && !coverByAsset.has(m.assetId)) coverByAsset.set(m.assetId, m);
+  }
+  // Fall back to the first image when no explicit cover is flagged.
+  for (const [assetId, list] of imagesByAsset) {
+    if (!coverByAsset.has(assetId) && list[0]) coverByAsset.set(assetId, list[0]);
+  }
+
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('assets');
+  const headers = ASSET_EXPORT_HEADERS[kind];
+  const keys = Object.keys(headers);
+  ws.columns = keys.map((k) => ({ header: headers[k] ?? k, key: k, width: 18 }));
+  // Append a cover-image column (filled via embedded images, not cell text).
+  const coverCol = keys.length + 1;
+  ws.getColumn(coverCol).width = 16;
+  ws.getCell(1, coverCol).value = '封面';
+
+  for (const item of items) {
+    const imgs = imagesByAsset.get(item.id) ?? [];
+    ws.addRow(Object.fromEntries(keys.map((k) => [k, assetCellValue(item, k, imgs.length)])));
+    const rowNumber = ws.rowCount;
+
+    const cover = coverByAsset.get(item.id);
+    if (cover) {
+      const extension = IMAGE_EXTENSIONS[extname(cover.objectKey).toLowerCase()];
+      if (extension) {
+        // Embedding needs the bytes in memory; skip silently if unavailable so a
+        // single bad object doesn't abort the whole manifest.
+        const buffer = await storage.getBytes(cover.objectKey).catch(() => null);
+        if (buffer) {
+          ws.getRow(rowNumber).height = 64;
+          const imageId = wb.addImage({ base64: buffer.toString('base64'), extension });
+          ws.addImage(imageId, {
+            tl: { col: coverCol - 1 + 0.1, row: rowNumber - 1 + 0.1 },
+            ext: { width: 80, height: 80 },
+          });
+        }
+      }
+    }
+  }
+
+  const xlsxBuffer = await wb.xlsx.writeBuffer();
+  zip.append(Buffer.from(xlsxBuffer), { name: 'manifest.xlsx' });
+
+  // 原图/ folder — every original image, grouped per asset, streamed sequentially.
+  for (const [assetId, imgs] of imagesByAsset) {
+    let n = 0;
+    for (const img of imgs) {
+      n += 1;
+      await appendObjectStream(zip, img.objectKey, `原图/${assetId}/${n}${extname(img.objectKey)}`);
     }
   }
 

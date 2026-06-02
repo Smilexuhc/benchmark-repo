@@ -137,22 +137,76 @@ async function fetchItemWithMedia(id: number) {
   return { ...item, media: mediaByRole, comments };
 }
 
-// List rows render only scalar columns (id, shotType, questionType, scene,
-// score, needsRevision); media + comments are unused on the table view, so
-// shipping them inflates payload, serialization, and per-page presigned-URL
-// signing. Detail fetches still call `fetchItemWithMedia` and return the full
-// shape.
-async function fetchPageItemsBare(ids: number[]) {
+function emptyMediaByRole(): MediaByRoleType {
+  return {
+    character_image: [],
+    scene_image: [],
+    prop_image: [],
+    audio_input: [],
+    video_input: [],
+    video_output: [],
+  };
+}
+
+// List rows carry their media (grouped by role) so the table can render image
+// thumbnails and play output videos inline — legacy parity. Media is batch
+// loaded for the whole page (one links query + one media query + parallel
+// presigning) to avoid an N+1 per row. Comments are still omitted from the list
+// payload; the detail fetch (`fetchItemWithMedia`) returns them.
+async function fetchPageItems(ids: number[]) {
   if (ids.length === 0) return [];
 
   const itemRows = await db
     .select()
     .from(videoBenchmarkItems)
     .where(inArray(videoBenchmarkItems.id, ids));
-
   const itemMap = new Map(itemRows.map((i) => [i.id, i]));
+
+  const links = await db
+    .select()
+    .from(videoBenchmarkMediaLinks)
+    .where(inArray(videoBenchmarkMediaLinks.itemId, ids))
+    .orderBy(videoBenchmarkMediaLinks.sortOrder);
+
+  const mediaIds = [...new Set(links.map((l) => l.mediaId))];
+  const mediaRows =
+    mediaIds.length > 0
+      ? await db
+          .select()
+          .from(media)
+          .where(and(inArray(media.id, mediaIds), mediaVisible()))
+      : [];
+
+  // Presign every visible media file once, in parallel.
+  const urlById = new Map<number, string>();
+  await Promise.all(
+    mediaRows.map(async (m) => {
+      urlById.set(m.id, await storage.getPresignedUrl(m.objectKey).catch(() => ''));
+    }),
+  );
+  const visibleIds = new Set(mediaRows.map((m) => m.id));
+
+  const mediaByItem = new Map<number, MediaByRoleType>();
+  for (const link of links) {
+    // Skip links whose media is invisible (own soft-delete or soft-deleted parent asset).
+    if (!visibleIds.has(link.mediaId)) continue;
+    let group = mediaByItem.get(link.itemId);
+    if (!group) {
+      group = emptyMediaByRole();
+      mediaByItem.set(link.itemId, group);
+    }
+    const linkOut: MediaLinkOutType = { ...link, url: urlById.get(link.mediaId) ?? '' };
+    if (link.role in group) {
+      (group[link.role as keyof MediaByRoleType] as MediaLinkOutType[]).push(linkOut);
+    }
+  }
+
   return ids
-    .map((id) => itemMap.get(id) ?? null)
+    .map((id) => {
+      const item = itemMap.get(id);
+      if (!item) return null;
+      return { ...item, media: mediaByItem.get(id) ?? emptyMediaByRole() };
+    })
     .filter((i): i is NonNullable<typeof i> => i !== null);
 }
 
@@ -164,6 +218,7 @@ const ItemScalars = z.object({
   manualTag: z.string().default(''),
   scene: z.string().default(''),
   screenSize: z.string().default(''),
+  difficulty: z.enum(['', '易', '中', '难']).default(''),
   textPrompt: z.string().default(''),
   judgingCriteria: z.string().default(''),
   score: z.number().int().min(0).max(5).nullable().default(null),
@@ -182,7 +237,15 @@ export const benchmarkRouter = t.router({
         filters: z
           .object({
             shotType: z.string().optional(),
+            taskType: z.string().optional(),
             questionType: z.string().optional(),
+            scene: z.string().optional(),
+            screenSize: z.string().optional(),
+            difficulty: z.enum(['', '易', '中', '难']).optional(),
+            manualTag: z.string().optional(),
+            score: z.number().int().min(0).max(5).optional(),
+            needsRevision: z.boolean().optional(),
+            hasComments: z.boolean().optional(),
           })
           .optional(),
       }),
@@ -199,15 +262,43 @@ export const benchmarkRouter = t.router({
       }
       if (input.search?.trim()) {
         const term = `%${input.search.trim()}%`;
+        // Search spans every scalar text field (legacy parity: the search box
+        // matches anywhere, not just prompt/scene).
         baseConditions.push(
-          sql`(${videoBenchmarkItems.textPrompt} ILIKE ${term} OR ${videoBenchmarkItems.scene} ILIKE ${term})`,
+          sql`(${videoBenchmarkItems.textPrompt} ILIKE ${term}
+            OR ${videoBenchmarkItems.scene} ILIKE ${term}
+            OR ${videoBenchmarkItems.shotType} ILIKE ${term}
+            OR ${videoBenchmarkItems.taskType} ILIKE ${term}
+            OR ${videoBenchmarkItems.questionType} ILIKE ${term}
+            OR ${videoBenchmarkItems.manualTag} ILIKE ${term}
+            OR ${videoBenchmarkItems.screenSize} ILIKE ${term}
+            OR ${videoBenchmarkItems.judgingCriteria} ILIKE ${term})`,
         );
       }
-      if (input.filters?.shotType) {
-        baseConditions.push(eq(videoBenchmarkItems.shotType, input.filters.shotType));
+      const f = input.filters;
+      if (f?.shotType) baseConditions.push(eq(videoBenchmarkItems.shotType, f.shotType));
+      if (f?.taskType) baseConditions.push(eq(videoBenchmarkItems.taskType, f.taskType));
+      if (f?.questionType)
+        baseConditions.push(eq(videoBenchmarkItems.questionType, f.questionType));
+      if (f?.scene) baseConditions.push(eq(videoBenchmarkItems.scene, f.scene));
+      if (f?.screenSize) baseConditions.push(eq(videoBenchmarkItems.screenSize, f.screenSize));
+      if (f?.difficulty) baseConditions.push(eq(videoBenchmarkItems.difficulty, f.difficulty));
+      if (f?.manualTag) {
+        baseConditions.push(sql`${videoBenchmarkItems.manualTag} ILIKE ${`%${f.manualTag}%`}`);
       }
-      if (input.filters?.questionType) {
-        baseConditions.push(eq(videoBenchmarkItems.questionType, input.filters.questionType));
+      if (f?.score !== undefined) baseConditions.push(eq(videoBenchmarkItems.score, f.score));
+      if (f?.needsRevision !== undefined) {
+        baseConditions.push(eq(videoBenchmarkItems.needsRevision, f.needsRevision));
+      }
+      if (f?.hasComments !== undefined) {
+        // EXISTS over alive comments — filter items that do (or don't) have any
+        // non-deleted comment.
+        const existsClause = sql`EXISTS (
+          SELECT 1 FROM ${benchmarkItemComments}
+          WHERE ${benchmarkItemComments.itemId} = ${videoBenchmarkItems.id}
+            AND ${benchmarkItemComments.deletedAt} IS NULL
+        )`;
+        baseConditions.push(f.hasComments ? existsClause : sql`NOT ${existsClause}`);
       }
 
       const baseWhere = baseConditions.length > 0 ? and(...baseConditions) : undefined;
@@ -238,7 +329,7 @@ export const benchmarkRouter = t.router({
       const nextCursor =
         hasMore && pageIds.length > 0 ? (pageIds[pageIds.length - 1] ?? null) : null;
 
-      const items = await fetchPageItemsBare(pageIds);
+      const items = await fetchPageItems(pageIds);
 
       return {
         items,

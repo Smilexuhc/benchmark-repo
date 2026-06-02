@@ -78,7 +78,9 @@ export const media = pgTable(
     // Hot path: asset detail + library cover derivation scan a single asset's
     // (or a page's) ALIVE media by asset_id. Partial-on-alive keeps soft-deleted
     // rows out of the index so the scan matches the deleted_at IS NULL filter.
-    index('idx_media_asset_active').on(t.assetId).where(sql`${t.deletedAt} IS NULL`),
+    index('idx_media_asset_active')
+      .on(t.assetId)
+      .where(sql`${t.deletedAt} IS NULL`),
   ],
 );
 
@@ -92,6 +94,8 @@ export const videoBenchmarkItems = pgTable(
     manualTag: text('manual_tag').notNull().default(''),
     scene: text('scene').notNull().default(''),
     screenSize: text('screen_size').notNull().default(''),
+    // Legacy difficulty: empty (unset) or one of 易/中/难. Auto-prefixed onto manual_tag as 【难】.
+    difficulty: text('difficulty').notNull().default(''),
     textPrompt: text('text_prompt').notNull().default(''),
     judgingCriteria: text('judging_criteria').notNull().default(''),
     score: smallint('score'),
@@ -102,6 +106,7 @@ export const videoBenchmarkItems = pgTable(
   },
   (t) => [
     check('chk_vbi_score', sql`${t.score} IS NULL OR (${t.score} >= 0 AND ${t.score} <= 5)`),
+    check('chk_vbi_difficulty', sql`${t.difficulty} IN ('', '易', '中', '难')`),
     index('idx_vbi_shot_question').on(t.shotType, t.questionType),
     index('idx_vbi_active').on(t.id).where(sql`${t.deletedAt} IS NULL`),
   ],
@@ -153,7 +158,9 @@ export const benchmarkItemComments = pgTable(
     index('idx_bic_item_id_created').on(t.itemId, t.createdAt),
     // fetchItemWithMedia reads an item's ALIVE comments ordered by created_at.
     // Partial-on-alive matches the deleted_at IS NULL filter and orders for free.
-    index('idx_bic_active').on(t.itemId, t.createdAt).where(sql`${t.deletedAt} IS NULL`),
+    index('idx_bic_active')
+      .on(t.itemId, t.createdAt)
+      .where(sql`${t.deletedAt} IS NULL`),
   ],
 );
 
