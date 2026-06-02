@@ -9,6 +9,7 @@ import {
   type MediaByRoleType,
   type MediaLinkOutType,
 } from '@benchmark-admin/shared/schemas/benchmark';
+import { definitionFor } from '@benchmark-admin/shared/benchmark/categoryTree';
 import { TRPCError } from '@trpc/server';
 import { type SQL, and, desc, eq, gte, inArray, isNotNull, isNull, lt, sql } from 'drizzle-orm';
 import { z } from 'zod';
@@ -218,12 +219,39 @@ const ItemScalars = z.object({
   manualTag: z.string().default(''),
   scene: z.string().default(''),
   screenSize: z.string().default(''),
+  categoryL1: z.string().default(''),
+  categoryL2: z.string().default(''),
+  categoryL3: z.string().default(''),
+  categoryDefinition: z.string().default(''),
   difficulty: z.enum(['', '易', '中', '难']).default(''),
   textPrompt: z.string().default(''),
   judgingCriteria: z.string().default(''),
   score: z.number().int().min(0).max(5).nullable().default(null),
   needsRevision: z.boolean().default(false),
 });
+
+// categoryDefinition is derived data: when the (l1,l2,l3) path resolves to a known
+// tree leaf, that leaf's definition is authoritative and overrides any client-sent
+// value so the stored definition can never drift from the selected path. An
+// unresolved path (legacy free-text categories not in the tree) keeps whatever value
+// was supplied. Only applies when all three levels are present (full create, or an
+// update payload that carries the category path); partial updates that omit the
+// category fields pass through untouched.
+function deriveCategoryDefinition<
+  T extends {
+    categoryL1?: string | undefined;
+    categoryL2?: string | undefined;
+    categoryL3?: string | undefined;
+    categoryDefinition?: string | undefined;
+  },
+>(scalars: T): T {
+  const { categoryL1, categoryL2, categoryL3 } = scalars;
+  if (categoryL1 === undefined || categoryL2 === undefined || categoryL3 === undefined) {
+    return scalars;
+  }
+  const canonical = definitionFor(categoryL1, categoryL2, categoryL3);
+  return canonical ? { ...scalars, categoryDefinition: canonical } : scalars;
+}
 
 // ── Router ────────────────────────────────────────────────────────────────────
 
@@ -239,6 +267,9 @@ export const benchmarkRouter = t.router({
             shotType: z.string().optional(),
             taskType: z.string().optional(),
             questionType: z.string().optional(),
+            categoryL1: z.string().optional(),
+            categoryL2: z.string().optional(),
+            categoryL3: z.string().optional(),
             scene: z.string().optional(),
             screenSize: z.string().optional(),
             difficulty: z.enum(['', '易', '中', '难']).optional(),
@@ -272,6 +303,10 @@ export const benchmarkRouter = t.router({
             OR ${videoBenchmarkItems.questionType} ILIKE ${term}
             OR ${videoBenchmarkItems.manualTag} ILIKE ${term}
             OR ${videoBenchmarkItems.screenSize} ILIKE ${term}
+            OR ${videoBenchmarkItems.categoryL1} ILIKE ${term}
+            OR ${videoBenchmarkItems.categoryL2} ILIKE ${term}
+            OR ${videoBenchmarkItems.categoryL3} ILIKE ${term}
+            OR ${videoBenchmarkItems.categoryDefinition} ILIKE ${term}
             OR ${videoBenchmarkItems.judgingCriteria} ILIKE ${term})`,
         );
       }
@@ -280,6 +315,9 @@ export const benchmarkRouter = t.router({
       if (f?.taskType) baseConditions.push(eq(videoBenchmarkItems.taskType, f.taskType));
       if (f?.questionType)
         baseConditions.push(eq(videoBenchmarkItems.questionType, f.questionType));
+      if (f?.categoryL1) baseConditions.push(eq(videoBenchmarkItems.categoryL1, f.categoryL1));
+      if (f?.categoryL2) baseConditions.push(eq(videoBenchmarkItems.categoryL2, f.categoryL2));
+      if (f?.categoryL3) baseConditions.push(eq(videoBenchmarkItems.categoryL3, f.categoryL3));
       if (f?.scene) baseConditions.push(eq(videoBenchmarkItems.scene, f.scene));
       if (f?.screenSize) baseConditions.push(eq(videoBenchmarkItems.screenSize, f.screenSize));
       if (f?.difficulty) baseConditions.push(eq(videoBenchmarkItems.difficulty, f.difficulty));
@@ -349,7 +387,8 @@ export const benchmarkRouter = t.router({
   create: protectedProcedure
     .input(ItemScalars.extend({ media: MediaBundleInput }))
     .mutation(async ({ input }) => {
-      const { media, ...scalars } = input;
+      const { media, ...rawScalars } = input;
+      const scalars = deriveCategoryDefinition(rawScalars);
 
       let item: typeof videoBenchmarkItems.$inferSelect;
       try {
@@ -390,7 +429,8 @@ export const benchmarkRouter = t.router({
         .extend({ media: MediaBundleInput }),
     )
     .mutation(async ({ input }) => {
-      const { id, media, ...scalars } = input;
+      const { id, media, ...rawScalars } = input;
+      const scalars = deriveCategoryDefinition(rawScalars);
 
       let item: typeof videoBenchmarkItems.$inferSelect;
       try {
@@ -472,15 +512,22 @@ export const benchmarkRouter = t.router({
     }),
 
   stats: protectedProcedure.query(async () => {
+    // Legacy parity (backend/db.py video_benchmark_stats): group by the V3 category
+    // path. Empty-category rows group under '' and are still counted.
     const groups = await db
       .select({
-        shotType: videoBenchmarkItems.shotType,
-        questionType: videoBenchmarkItems.questionType,
+        categoryL1: videoBenchmarkItems.categoryL1,
+        categoryL2: videoBenchmarkItems.categoryL2,
+        categoryL3: videoBenchmarkItems.categoryL3,
         count: sql<number>`count(*)::int`,
       })
       .from(videoBenchmarkItems)
       .where(isNull(videoBenchmarkItems.deletedAt))
-      .groupBy(videoBenchmarkItems.shotType, videoBenchmarkItems.questionType);
+      .groupBy(
+        videoBenchmarkItems.categoryL1,
+        videoBenchmarkItems.categoryL2,
+        videoBenchmarkItems.categoryL3,
+      );
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -492,8 +539,9 @@ export const benchmarkRouter = t.router({
 
     return {
       groups: groups.map((g) => ({
-        shotType: g.shotType,
-        questionType: g.questionType,
+        categoryL1: g.categoryL1,
+        categoryL2: g.categoryL2,
+        categoryL3: g.categoryL3,
         count: g.count,
       })),
       todayNew: todayRow?.count ?? 0,

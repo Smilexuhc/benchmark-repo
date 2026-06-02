@@ -225,6 +225,19 @@ describe('exportsRouter.getDownloadUrl', () => {
     expect(result.url).toContain('needsRevision=true');
   });
 
+  it('encodes category filters into the download URL query string', async () => {
+    const result = await caller.exports.getDownloadUrl({
+      kind: 'benchmark',
+      categoryL1: '单镜头',
+      categoryL2: '提示词遵循/参考绑定',
+      categoryL3: '核心文本指令遵循',
+    });
+    const params = new URLSearchParams(result.url.split('?')[1]);
+    expect(params.get('categoryL1')).toBe('单镜头');
+    expect(params.get('categoryL2')).toBe('提示词遵循/参考绑定');
+    expect(params.get('categoryL3')).toBe('核心文本指令遵循');
+  });
+
   it('returns the download URL for an asset kind', async () => {
     const result = await caller.exports.getDownloadUrl({ kind: 'character' });
     expect(result.url).toBe('/api/export/character.zip');

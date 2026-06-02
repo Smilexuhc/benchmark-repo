@@ -284,14 +284,20 @@ describe('benchmarkRouter', () => {
   });
 
   describe('stats', () => {
-    it('returns group counts by shot_type × question_type and todayNew', async () => {
+    it('returns group counts by category l1/l2/l3 and todayNew (legacy parity)', async () => {
       for (let i = 0; i < 2; i++) {
-        await caller.benchmark.create({ shotType: 'wide', questionType: 'qa', media: emptyMedia });
+        await caller.benchmark.create({
+          categoryL1: '单镜头',
+          categoryL2: '人物与角色',
+          categoryL3: '人脸与身份稳定性',
+          media: emptyMedia,
+        });
       }
       for (let i = 0; i < 2; i++) {
         await caller.benchmark.create({
-          shotType: 'close',
-          questionType: 'score',
+          categoryL1: '连续镜头',
+          categoryL2: '场景连续性',
+          categoryL3: '场景参考连续',
           media: emptyMedia,
         });
       }
@@ -299,6 +305,11 @@ describe('benchmarkRouter', () => {
       const { groups, todayNew } = await caller.benchmark.stats();
 
       expect(groups.length).toBeGreaterThanOrEqual(2);
+      const single = groups.find(
+        (g: { categoryL1: string; categoryL3: string; count: number }) =>
+          g.categoryL1 === '单镜头' && g.categoryL3 === '人脸与身份稳定性',
+      );
+      expect(single?.count).toBe(2);
       expect(typeof todayNew).toBe('number');
       expect(todayNew).toBeGreaterThanOrEqual(4);
     });
@@ -463,6 +474,122 @@ describe('benchmarkRouter', () => {
 
       const miss = await caller.benchmark.list({ search: 'no-such-text-zzz' });
       expect(miss.items.map((i: { id: number }) => i.id)).not.toContain(item.id);
+    });
+  });
+
+  describe('V3 categories (legacy parity)', () => {
+    const cat = {
+      categoryL1: '单镜头',
+      categoryL2: '提示词遵循/参考绑定',
+      categoryL3: '核心文本指令遵循',
+      categoryDefinition: '检查文本指令中的主体、动作、场景、情绪和基础要求是否被正确执行',
+    };
+
+    it('create round-trips the four category fields', async () => {
+      const created = await caller.benchmark.create({ ...cat, media: emptyMedia });
+      const fetched = await caller.benchmark.get({ id: created.id });
+      expect(fetched.categoryL1).toBe(cat.categoryL1);
+      expect(fetched.categoryL2).toBe(cat.categoryL2);
+      expect(fetched.categoryL3).toBe(cat.categoryL3);
+      expect(fetched.categoryDefinition).toBe(cat.categoryDefinition);
+    });
+
+    it('update changes only category fields, leaving other scalars untouched', async () => {
+      const created = await caller.benchmark.create({
+        shotType: 'keep-me',
+        textPrompt: 'keep-prompt',
+        media: emptyMedia,
+      });
+      const updated = await caller.benchmark.update({ id: created.id, ...cat, media: emptyMedia });
+      expect(updated.categoryL3).toBe(cat.categoryL3);
+      expect(updated.shotType).toBe('keep-me');
+      expect(updated.textPrompt).toBe('keep-prompt');
+    });
+
+    it('filters by categoryL1, and narrows further by l2/l3', async () => {
+      const match = await caller.benchmark.create({ ...cat, media: emptyMedia });
+      const other = await caller.benchmark.create({
+        categoryL1: '长镜头',
+        categoryL2: '综合应用题',
+        categoryL3: '短剧',
+        media: emptyMedia,
+      });
+
+      const byL1 = await caller.benchmark.list({ filters: { categoryL1: '单镜头' } });
+      const byL1Ids = byL1.items.map((i: { id: number }) => i.id);
+      expect(byL1Ids).toContain(match.id);
+      expect(byL1Ids).not.toContain(other.id);
+
+      const byFullPath = await caller.benchmark.list({
+        filters: {
+          categoryL1: cat.categoryL1,
+          categoryL2: cat.categoryL2,
+          categoryL3: cat.categoryL3,
+        },
+      });
+      expect(byFullPath.items.map((i: { id: number }) => i.id)).toEqual([match.id]);
+
+      const all = await caller.benchmark.list({});
+      expect(all.total).toBe(2);
+    });
+
+    it('search matches a category_l3 / category_definition substring', async () => {
+      const item = await caller.benchmark.create({ ...cat, media: emptyMedia });
+
+      const byL3 = await caller.benchmark.list({ search: '核心文本指令遵循' });
+      expect(byL3.items.map((i: { id: number }) => i.id)).toContain(item.id);
+
+      const byDef = await caller.benchmark.list({ search: '基础要求是否被正确执行' });
+      expect(byDef.items.map((i: { id: number }) => i.id)).toContain(item.id);
+    });
+
+    it('empty categories are not matched by a non-empty filter and serialize as ""', async () => {
+      const blank = await caller.benchmark.create({ shotType: 'blank-cat', media: emptyMedia });
+      const fetched = await caller.benchmark.get({ id: blank.id });
+      expect(fetched.categoryL1).toBe('');
+      expect(fetched.categoryDefinition).toBe('');
+
+      const filtered = await caller.benchmark.list({ filters: { categoryL1: '单镜头' } });
+      expect(filtered.items.map((i: { id: number }) => i.id)).not.toContain(blank.id);
+    });
+
+    it('create overrides a tampered categoryDefinition with the tree-canonical value', async () => {
+      // A resolvable (l1,l2,l3) path is authoritative: the server recomputes the
+      // definition from the tree leaf and ignores whatever the client sent, so
+      // the stored definition can never drift from the selected path.
+      const created = await caller.benchmark.create({
+        ...cat,
+        categoryDefinition: '客户端伪造的定义',
+        media: emptyMedia,
+      });
+      const fetched = await caller.benchmark.get({ id: created.id });
+      expect(fetched.categoryDefinition).toBe(cat.categoryDefinition);
+    });
+
+    it('create preserves a client categoryDefinition for an unresolved (legacy) path', async () => {
+      // Legacy free-text categories not present in the tree must keep the
+      // supplied definition — derivation only overrides when the path resolves.
+      const legacyDef = '历史遗留的自由文本定义';
+      const created = await caller.benchmark.create({
+        categoryL1: '历史一级',
+        categoryL2: '历史二级',
+        categoryL3: '历史三级',
+        categoryDefinition: legacyDef,
+        media: emptyMedia,
+      });
+      const fetched = await caller.benchmark.get({ id: created.id });
+      expect(fetched.categoryDefinition).toBe(legacyDef);
+    });
+
+    it('update overrides categoryDefinition from the tree when the path resolves', async () => {
+      const created = await caller.benchmark.create({ shotType: 'derive-rt', media: emptyMedia });
+      const updated = await caller.benchmark.update({
+        id: created.id,
+        ...cat,
+        categoryDefinition: '客户端伪造的定义',
+        media: emptyMedia,
+      });
+      expect(updated.categoryDefinition).toBe(cat.categoryDefinition);
     });
   });
 });

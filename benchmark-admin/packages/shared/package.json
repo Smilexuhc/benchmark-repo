@@ -35,6 +35,10 @@
       "types": "./src/constants/question-types.ts",
       "default": "./dist/constants/question-types.js"
     },
+    "./benchmark/categoryTree": {
+      "types": "./src/benchmark/categoryTree.ts",
+      "default": "./dist/benchmark/categoryTree.js"
+    },
     "./lib/prompts/character": {
       "types": "./src/lib/prompts/character.ts",
       "default": "./dist/lib/prompts/character.js"
