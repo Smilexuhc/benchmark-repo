@@ -6,10 +6,11 @@
  * uses `useInfiniteQuery` + a "Load more" button. This test mocks tRPC and
  * verifies that clicking the button surfaces items beyond page 1.
  */
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { NuqsTestingAdapter } from 'nuqs/adapters/testing';
 import { describe, expect, it, vi } from 'vitest';
+import { LightboxProvider } from '@/components/ui/lightbox';
 import { createTrpcMock } from '@/test/trpc-mock';
 
 // Two pages of stub data — first page returns nextCursor: 21 so the button
@@ -61,7 +62,9 @@ describe('AssetLibrary pagination', () => {
   it('renders page 1 and loads page 2 from the server cursor', async () => {
     render(
       <NuqsTestingAdapter>
-        <AssetLibrary kind="character" />
+        <LightboxProvider>
+          <AssetLibrary kind="character" />
+        </LightboxProvider>
       </NuqsTestingAdapter>,
     );
 
@@ -70,6 +73,17 @@ describe('AssetLibrary pagination', () => {
 
     const more = screen.getByRole('button', { name: /加载更多/ });
     await userEvent.click(more);
+
+    // The list is now a vertical virtualized scroller (U5) rather than a
+    // multi-column grid, so the 21st item only renders once it enters the
+    // viewport. Scroll the container so the virtualizer mounts the tail row.
+    const scrollContainer = screen.getByRole('list', { name: '资源卡片' })
+      .parentElement as HTMLElement;
+    Object.defineProperty(scrollContainer, 'scrollTop', {
+      configurable: true,
+      get: () => 99_999,
+    });
+    fireEvent.scroll(scrollContainer);
 
     expect(await screen.findByText('Second-page only')).toBeInTheDocument();
   });

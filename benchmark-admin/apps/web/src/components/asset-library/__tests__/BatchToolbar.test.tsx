@@ -47,6 +47,7 @@ import { BatchToolbar } from '../BatchToolbar';
 
 function makeItem(id: number, name: string, prompt: string | null = `prompt-${id}`): AssetCardData {
   return {
+    kind: 'character',
     id,
     name,
     coverImageId: null,
