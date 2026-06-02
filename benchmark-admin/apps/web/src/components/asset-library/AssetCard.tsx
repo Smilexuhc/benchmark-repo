@@ -19,7 +19,7 @@ export type AssetCardData = {
     description?: string;
     scene_type?: string;
     mood?: string;
-    elements?: string[];
+    elements?: string;
     category?: string;
   };
   coverImageId?: number | null;
