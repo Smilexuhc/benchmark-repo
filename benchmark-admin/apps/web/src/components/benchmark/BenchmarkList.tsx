@@ -451,6 +451,11 @@ export function BenchmarkList() {
                       <Badge>{item.score}</Badge>
                     )}
                     {item.needsRevision ? <Badge variant="destructive">待修改</Badge> : null}
+                    {item.commentCount > 0 ? (
+                      <Badge variant="outline" aria-label={`${item.commentCount} 条评论`}>
+                        💬 {item.commentCount}
+                      </Badge>
+                    ) : null}
                   </div>
                   <div className="text-right">
                     <Button size="sm" variant="outline" onClick={() => setDrawerId(item.id)}>

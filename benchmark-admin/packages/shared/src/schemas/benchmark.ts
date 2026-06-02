@@ -21,6 +21,17 @@ export type MediaLinkOutType = z.infer<typeof MediaLinkOut>;
 export const BenchmarkComment = createSelectSchema(benchmarkItemComments);
 export type BenchmarkCommentType = z.infer<typeof BenchmarkComment>;
 
+// Inbound shape for benchmark.comments.add — author is now user-supplied
+// (legacy parity: the comment header shows whoever typed it, not the logged-in
+// admin). Empty author is rejected so the client cannot silently submit an
+// anonymous comment.
+export const CommentAddInput = z.object({
+  itemId: z.number().int().positive(),
+  author: z.string().min(1),
+  body: z.string().min(1),
+});
+export type CommentAddInputType = z.infer<typeof CommentAddInput>;
+
 // MediaBundleInput — the inbound media wiring for an item.
 // All six roles are multi-cardinality (legacy accepts lists for audio/video too).
 // The service explodes this into video_benchmark_media_links rows.
