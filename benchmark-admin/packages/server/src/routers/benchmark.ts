@@ -5,6 +5,7 @@ import {
   videoBenchmarkMediaLinks,
 } from '@benchmark-admin/shared/db/schema';
 import {
+  CommentAddInput,
   MediaBundleInput,
   type MediaByRoleType,
   type MediaLinkOutType,
@@ -202,11 +203,27 @@ async function fetchPageItems(ids: number[]) {
     }
   }
 
+  // List rows surface comment count (U10) without shipping the full comment
+  // payload — single grouped count query keeps the page request O(1) extra.
+  const commentCounts = await db
+    .select({
+      itemId: benchmarkItemComments.itemId,
+      count: sql<number>`count(*)::int`,
+    })
+    .from(benchmarkItemComments)
+    .where(and(inArray(benchmarkItemComments.itemId, ids), isNull(benchmarkItemComments.deletedAt)))
+    .groupBy(benchmarkItemComments.itemId);
+  const commentCountByItem = new Map(commentCounts.map((c) => [c.itemId, c.count]));
+
   return ids
     .map((id) => {
       const item = itemMap.get(id);
       if (!item) return null;
-      return { ...item, media: mediaByItem.get(id) ?? emptyMediaByRole() };
+      return {
+        ...item,
+        media: mediaByItem.get(id) ?? emptyMediaByRole(),
+        commentCount: commentCountByItem.get(id) ?? 0,
+      };
     })
     .filter((i): i is NonNullable<typeof i> => i !== null);
 }
@@ -564,20 +581,18 @@ export const benchmarkRouter = t.router({
           .orderBy(benchmarkItemComments.createdAt);
       }),
 
-    add: protectedProcedure
-      .input(z.object({ itemId: z.number().int().positive(), body: z.string().min(1) }))
-      .mutation(async ({ input, ctx }) => {
-        const [comment] = await db
-          .insert(benchmarkItemComments)
-          .values({
-            itemId: input.itemId,
-            body: input.body,
-            author: ctx.session?.email ?? '',
-          })
-          .returning();
-        if (!comment) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
-        return comment;
-      }),
+    add: protectedProcedure.input(CommentAddInput).mutation(async ({ input }) => {
+      const [comment] = await db
+        .insert(benchmarkItemComments)
+        .values({
+          itemId: input.itemId,
+          body: input.body,
+          author: input.author,
+        })
+        .returning();
+      if (!comment) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      return comment;
+    }),
 
     delete: protectedProcedure
       .input(z.object({ commentId: z.number().int().positive() }))

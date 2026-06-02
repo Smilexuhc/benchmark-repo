@@ -321,10 +321,12 @@ describe('benchmarkRouter', () => {
 
       const comment = await caller.benchmark.comments.add({
         itemId: item.id,
+        author: '张三',
         body: 'Test comment body',
       });
 
-      expect(comment.author).toBe('admin@example.com');
+      // Author now comes from the client (U10 legacy parity) — not the session.
+      expect(comment.author).toBe('张三');
       expect(comment.body).toBe('Test comment body');
 
       const comments = await caller.benchmark.comments.list({ itemId: item.id });
@@ -334,6 +336,13 @@ describe('benchmarkRouter', () => {
 
       const after = await caller.benchmark.comments.list({ itemId: item.id });
       expect(after.every((c: { id: number }) => c.id !== comment.id)).toBe(true);
+    });
+
+    it('rejects an empty author', async () => {
+      const item = await caller.benchmark.create({ media: emptyMedia });
+      await expect(
+        caller.benchmark.comments.add({ itemId: item.id, author: '', body: 'body' }),
+      ).rejects.toThrow();
     });
   });
 
@@ -406,7 +415,11 @@ describe('benchmarkRouter', () => {
         questionType: 'check',
         media: { ...emptyMedia, characterImageIds: [charImgId] },
       });
-      await caller.benchmark.comments.add({ itemId: item.id, body: 'a comment' });
+      await caller.benchmark.comments.add({
+        itemId: item.id,
+        author: '李四',
+        body: 'a comment',
+      });
 
       const { items } = await caller.benchmark.list({ filters: { shotType: 'trim' } });
       const listed = items.find((i: { id: number }) => i.id === item.id);
@@ -417,6 +430,9 @@ describe('benchmarkRouter', () => {
       ).toBe(1);
       // …but comments stay out of the list payload — only the drawer needs them.
       expect((listed as Record<string, unknown>).comments).toBeUndefined();
+      // commentCount is surfaced (U10) so the list can render a "N 条评论" pill
+      // without paying for the full payload.
+      expect((listed as { commentCount: number }).commentCount).toBe(1);
 
       const fetched = await caller.benchmark.get({ id: item.id });
       expect(fetched.media.character_image.length).toBe(1);
@@ -438,7 +454,11 @@ describe('benchmarkRouter', () => {
         needsRevision: false,
         media: emptyMedia,
       });
-      await caller.benchmark.comments.add({ itemId: hard.id, body: 'needs another look' });
+      await caller.benchmark.comments.add({
+        itemId: hard.id,
+        author: '李四',
+        body: 'needs another look',
+      });
 
       const byDifficulty = await caller.benchmark.list({ filters: { difficulty: '难' } });
       const hardIds = byDifficulty.items.map((i: { id: number }) => i.id);
