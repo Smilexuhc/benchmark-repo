@@ -7,7 +7,7 @@
     "lint": "biome lint .",
     "format": "biome format --write .",
     "typecheck": "tsc -p packages/shared/tsconfig.json --noEmit && tsc -p packages/server/tsconfig.json --noEmit && tsc -p apps/server/tsconfig.json --noEmit && tsc -p apps/web/tsconfig.json --noEmit",
-    "test": "vitest run",
+    "test": "pnpm --filter @benchmark-admin/shared build && vitest run",
     "db:gen": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate"
   },
