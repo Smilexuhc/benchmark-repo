@@ -37,6 +37,10 @@ function item(over: Partial<LegacyItemRow> = {}): LegacyItemRow {
     difficulty: '',
     scene: '',
     screen_size: '',
+    category_l1: '',
+    category_l2: '',
+    category_l3: '',
+    category_definition: '',
     text_prompt: '',
     judging_criteria: '',
     score: null,
@@ -141,5 +145,30 @@ describe('mapItem difficulty range', () => {
       id: 5,
       value: 'EASY',
     });
+  });
+});
+
+describe('mapItem V3 categories', () => {
+  it('passes the three-level category and definition through verbatim', () => {
+    const { item: it } = mapItem(
+      item({
+        category_l1: '单镜头',
+        category_l2: '人物与角色',
+        category_l3: '人脸与身份稳定性',
+        category_definition: '检查主体在运动和表演过程中是否保持同一身份、五官和年龄感',
+      }),
+    );
+    expect(it.category_l1).toBe('单镜头');
+    expect(it.category_l2).toBe('人物与角色');
+    expect(it.category_l3).toBe('人脸与身份稳定性');
+    expect(it.category_definition).toBe('检查主体在运动和表演过程中是否保持同一身份、五官和年龄感');
+  });
+
+  it('defaults to empty strings when legacy categories are blank', () => {
+    const { item: it } = mapItem(item({}));
+    expect(it.category_l1).toBe('');
+    expect(it.category_l2).toBe('');
+    expect(it.category_l3).toBe('');
+    expect(it.category_definition).toBe('');
   });
 });

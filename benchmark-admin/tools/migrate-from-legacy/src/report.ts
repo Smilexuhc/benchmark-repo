@@ -12,6 +12,7 @@ export interface MigrationReport {
   mode: Mode | 'verify';
   ok: boolean;
   difficultyMigrated: boolean;
+  categoriesMigrated: boolean;
   counts: MigrateResult['counts'] | null;
   anomalies: Anomaly[];
   anomalySummary: Record<Anomaly['type'], number>;
@@ -50,6 +51,7 @@ export function buildReport(args: {
     mode,
     ok: error == null && (verify ? verify.ok : true),
     difficultyMigrated: result?.difficultyMigrated ?? false,
+    categoriesMigrated: result?.categoriesMigrated ?? false,
     counts: result?.counts ?? null,
     anomalies,
     anomalySummary: summarize(anomalies),

@@ -20,6 +20,14 @@ const DIFFICULTY_MIGRATION = `
   ALTER TABLE video_benchmark_items ADD CONSTRAINT difficulty_allowed CHECK (difficulty IN ('', '易', '中', '难'));
 `;
 
+// Mirrors ben7 migration 0005 (V3 categories) — added separately so we can test both states.
+const CATEGORY_MIGRATION = `
+  ALTER TABLE video_benchmark_items ADD COLUMN category_l1 text DEFAULT '' NOT NULL;
+  ALTER TABLE video_benchmark_items ADD COLUMN category_l2 text DEFAULT '' NOT NULL;
+  ALTER TABLE video_benchmark_items ADD COLUMN category_l3 text DEFAULT '' NOT NULL;
+  ALTER TABLE video_benchmark_items ADD COLUMN category_definition text DEFAULT '' NOT NULL;
+`;
+
 // Minimal legacy schema: only the columns the tool reads.
 const LEGACY_SCHEMA = `
   CREATE TABLE assets (
@@ -48,6 +56,10 @@ const LEGACY_SCHEMA = `
     difficulty text NOT NULL DEFAULT '',
     scene text NOT NULL DEFAULT '',
     screen_size text NOT NULL DEFAULT '',
+    category_l1 text NOT NULL DEFAULT '',
+    category_l2 text NOT NULL DEFAULT '',
+    category_l3 text NOT NULL DEFAULT '',
+    category_definition text NOT NULL DEFAULT '',
     text_prompt text NOT NULL DEFAULT '',
     judging_criteria text NOT NULL DEFAULT '',
     score double precision,
@@ -106,9 +118,9 @@ async function seedLegacy(pg: PGlite): Promise<void> {
       (30, 3, 'uploads/song-a.mp3', 'audio'),  -- becomes standalone, title "Song A"
       (40, 4, 'uploads/sword.png', 'image');
     -- item 1 has a link row; item 2 only has FK columns (pre-0005 era)
-    INSERT INTO video_benchmark_items (id, text_prompt, difficulty, character_image_id, scene_image_id) VALUES
-      (1, 'prompt one', '易', NULL, NULL),
-      (2, 'prompt two', '中', 10, 20);
+    INSERT INTO video_benchmark_items (id, text_prompt, difficulty, category_l1, category_l2, category_l3, category_definition, character_image_id, scene_image_id) VALUES
+      (1, 'prompt one', '易', '', '', '', '', NULL, NULL),
+      (2, 'prompt two', '中', '单镜头', '人物与角色', '人脸与身份稳定性', '检查身份稳定性', 10, 20);
     INSERT INTO video_benchmark_media_links (id, item_id, role, media_id, sort_order) VALUES
       (100, 1, 'character_image', 10, 0);
     INSERT INTO benchmark_item_comments (id, item_id, author, body) VALUES
@@ -117,7 +129,7 @@ async function seedLegacy(pg: PGlite): Promise<void> {
   );
 }
 
-async function makeTarget(withDifficulty: boolean): Promise<PGlite> {
+async function makeTarget(withDifficulty: boolean, withCategories = false): Promise<PGlite> {
   const pg = new PGlite();
   for (const file of ADMIN_MIGRATIONS) {
     const sql = readFileSync(join(MIGRATIONS_DIR, file), 'utf-8');
@@ -129,6 +141,7 @@ async function makeTarget(withDifficulty: boolean): Promise<PGlite> {
     }
   }
   if (withDifficulty) await exec(pg, DIFFICULTY_MIGRATION);
+  if (withCategories) await exec(pg, CATEGORY_MIGRATION);
   return pg;
 }
 
@@ -223,6 +236,40 @@ describe('migrate (integration)', () => {
     // column genuinely absent on target
     const col = await targetPg.query(
       `SELECT 1 FROM information_schema.columns WHERE table_name='video_benchmark_items' AND column_name='difficulty'`,
+    );
+    expect(col.rows).toHaveLength(0);
+  });
+
+  it('carries V3 categories through when the target columns exist', async () => {
+    const targetPg = await makeTarget(true, true);
+    const result = await migrate(asClient(sourcePg), asClient(targetPg), { mode: 'apply' });
+
+    expect(result.categoriesMigrated).toBe(true);
+    const c = await targetPg.query<{
+      category_l1: string;
+      category_l2: string;
+      category_l3: string;
+      category_definition: string;
+    }>(
+      'SELECT category_l1, category_l2, category_l3, category_definition FROM video_benchmark_items WHERE id = 2',
+    );
+    expect(c.rows[0]).toEqual({
+      category_l1: '单镜头',
+      category_l2: '人物与角色',
+      category_l3: '人脸与身份稳定性',
+      category_definition: '检查身份稳定性',
+    });
+  });
+
+  it('skips categories and notes it when the target columns are absent', async () => {
+    const targetPg = await makeTarget(true, false);
+    const result = await migrate(asClient(sourcePg), asClient(targetPg), { mode: 'apply' });
+
+    expect(result.categoriesMigrated).toBe(false);
+    expect(result.notes.join(' ')).toMatch(/category/i);
+    expect(await tableCount(targetPg, 'video_benchmark_items')).toBe(2);
+    const col = await targetPg.query(
+      `SELECT 1 FROM information_schema.columns WHERE table_name='video_benchmark_items' AND column_name='category_l1'`,
     );
     expect(col.rows).toHaveLength(0);
   });

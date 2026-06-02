@@ -49,6 +49,10 @@ export type TargetItem = {
   manual_tag: string;
   scene: string;
   screen_size: string;
+  category_l1: string;
+  category_l2: string;
+  category_l3: string;
+  category_definition: string;
   text_prompt: string;
   judging_criteria: string;
   score: number | null;
@@ -169,6 +173,10 @@ export function mapItem(row: LegacyItemRow): { item: TargetItem; anomaly?: Anoma
     manual_tag: row.manual_tag,
     scene: row.scene,
     screen_size: row.screen_size,
+    category_l1: row.category_l1,
+    category_l2: row.category_l2,
+    category_l3: row.category_l3,
+    category_definition: row.category_definition,
     text_prompt: row.text_prompt,
     judging_criteria: row.judging_criteria,
     score: row.score,

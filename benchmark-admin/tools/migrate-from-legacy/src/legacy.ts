@@ -29,6 +29,11 @@ export type LegacyItemRow = {
   difficulty: string;
   scene: string;
   screen_size: string;
+  // V3 category dimension (legacy migration 0015).
+  category_l1: string;
+  category_l2: string;
+  category_l3: string;
+  category_definition: string;
   text_prompt: string;
   judging_criteria: string;
   score: number | null;

@@ -45,6 +45,7 @@ export interface MigrateOptions {
 export interface MigrateResult {
   mode: Mode;
   difficultyMigrated: boolean;
+  categoriesMigrated: boolean;
   counts: {
     sourceAssets: number;
     keptAssets: number;
@@ -104,6 +105,13 @@ async function targetHasDifficultyColumn(target: QueryClient): Promise<boolean> 
   return rows.length > 0;
 }
 
+async function targetHasCategoryColumns(target: QueryClient): Promise<boolean> {
+  const { rows } = await target.query(
+    `SELECT 1 FROM information_schema.columns WHERE table_name = 'video_benchmark_items' AND column_name = 'category_l1'`,
+  );
+  return rows.length > 0;
+}
+
 async function resetSequence(target: QueryClient, table: string): Promise<void> {
   await target.query(
     `SELECT setval(pg_get_serial_sequence($1, 'id'), (SELECT COALESCE(MAX(id), 1) FROM ${table}), (SELECT COUNT(*) > 0 FROM ${table}))`,
@@ -127,7 +135,8 @@ export async function migrate(
   const itemRows = (
     await source.query(
       `SELECT id, shot_type, task_type, question_type, manual_tag, difficulty, scene,
-              screen_size, text_prompt, judging_criteria, score, needs_revision,
+              screen_size, category_l1, category_l2, category_l3, category_definition,
+              text_prompt, judging_criteria, score, needs_revision,
               created_at, updated_at, deleted_at
          FROM video_benchmark_items`,
     )
@@ -233,6 +242,16 @@ export async function migrate(
     );
   }
 
+  const categoriesMigrated = await targetHasCategoryColumns(target);
+  if (!categoriesMigrated) {
+    const nonEmpty = targetItems.filter(
+      (i) => i.category_l1 !== '' || i.category_l2 !== '' || i.category_l3 !== '',
+    ).length;
+    notes.push(
+      `Target video_benchmark_items has no V3 category columns (depends on ben7 migration 0005). ${nonEmpty} item(s) carry a non-empty category that will NOT be migrated until those columns land. Merge the category migration first, then re-run.`,
+    );
+  }
+
   const counts: MigrateResult['counts'] = {
     sourceAssets: assetRows.length,
     keptAssets: targetAssets.length,
@@ -246,7 +265,7 @@ export async function migrate(
   };
 
   if (opts.mode === 'dry-run') {
-    return { mode: 'dry-run', difficultyMigrated, counts, anomalies, notes };
+    return { mode: 'dry-run', difficultyMigrated, categoriesMigrated, counts, anomalies, notes };
   }
 
   // ── Apply (FK-safe order, two-pass cover) ───────────────────────────────────
@@ -335,6 +354,14 @@ export async function migrate(
     { name: 'deleted_at' },
   ];
   if (difficultyMigrated) itemColumns.push({ name: 'difficulty' });
+  if (categoriesMigrated) {
+    itemColumns.push(
+      { name: 'category_l1' },
+      { name: 'category_l2' },
+      { name: 'category_l3' },
+      { name: 'category_definition' },
+    );
+  }
   await upsert(
     target,
     'video_benchmark_items',
@@ -409,7 +436,7 @@ export async function migrate(
     chunkSize,
   );
 
-  return { mode: 'apply', difficultyMigrated, counts, anomalies, notes };
+  return { mode: 'apply', difficultyMigrated, categoriesMigrated, counts, anomalies, notes };
 }
 
 export interface VerifyCheck {
