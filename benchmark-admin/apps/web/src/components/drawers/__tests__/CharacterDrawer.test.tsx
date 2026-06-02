@@ -1,16 +1,19 @@
+import { Toaster } from '@/components/feedback/toast';
+import { createTrpcMock } from '@/test/trpc-mock';
 /**
- * Tests that the AI-patched (dirty) fields in CharacterDrawer survive a
- * post-AI ctx.refresh() (P1 from JUJ-22).
+ * U6 — Character Drawer alignment.
  *
- * The drawer's effect calls form.reset(serverData, { keepDirtyValues: true })
- * — fields the user (or AI extract) has touched are kept; only untouched
- * fields are overwritten by fresh server data. Without this option, a
- * refresh after an AI patch would clobber the patch with stale server data.
+ * Covers:
+ *  1. AI-patched (dirty) fields survive a server refresh (carried over from
+ *     JUJ-22 P1 — keepDirtyValues integration with react-hook-form).
+ *  2. `persona` is the required field (not `name`); empty persona shows `必填`.
+ *  3. `AI 填入字段` link runs extractFields against the description textarea and
+ *     merges the partial result back into the form (with a success toast).
+ *  4. AutoComplete allows free-text values not in the options list.
  */
 import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import { createTrpcMock } from '@/test/trpc-mock';
 
 type AssetRow = {
   id: number;
@@ -21,6 +24,7 @@ type AssetRow = {
   data: Record<string, string | undefined>;
   coverImageId: number | null;
   images: { id: number; objectKey: string; url: string }[];
+  deletedAt?: Date | null;
 };
 
 const initialAsset: AssetRow = {
@@ -41,6 +45,7 @@ const initialAsset: AssetRow = {
   },
   coverImageId: null,
   images: [],
+  deletedAt: null,
 };
 
 // The "live" copy returned by assets.get. The test mutates this to simulate
@@ -52,12 +57,27 @@ vi.mock('@/lib/trpc', () =>
   createTrpcMock({
     query: {
       'assets.get': () => liveAsset,
+      'assets.options': () => ({
+        kind: 'character' as const,
+        era: ['现代', '古代'],
+        genre: ['都市', '玄幻'],
+        type: ['人类', '动物'],
+        gender: ['男', '女'],
+        age: ['青年', '中年'],
+      }),
     },
     mutation: {
-      'assets.create': async () => liveAsset,
+      'assets.create': async () => ({ ...liveAsset, id: 42 }),
       'assets.update': async () => liveAsset,
+      'assets.delete': async () => ({ id: 7 }),
+      'assets.restore': async () => liveAsset,
       'assets.deleteImage': async () => undefined,
       'assets.setCover': async () => undefined,
+      'assets.attachImage': async () => undefined,
+      'mediaAssets.getUploadUrl': async () => ({
+        uploadUrl: 'https://example.com/upload',
+        objectKey: 'images/abc.png',
+      }),
       'ai.generatePrompt': async () => ({ prompt: 'generated' }),
       'ai.generateImage': async () => ({}),
       'ai.extractFields': async () => ({
@@ -70,34 +90,71 @@ vi.mock('@/lib/trpc', () =>
 
 import { CharacterDrawer } from '../CharacterDrawer';
 
-describe('CharacterDrawer AI-patch preservation', () => {
+describe('CharacterDrawer', () => {
   it('keeps a dirty (AI-patched) field across a server-data refresh', async () => {
-    const onClose = vi.fn();
-    const onCreated = vi.fn();
-    const { rerender } = render(
-      <CharacterDrawer id={7} onClose={onClose} onCreated={onCreated} />,
-    );
+    liveAsset = structuredClone(initialAsset);
+    const { rerender } = render(<CharacterDrawer id={7} onClose={vi.fn()} onCreated={vi.fn()} />);
 
     const user = userEvent.setup();
 
-    // Simulate the user touching the prompt field — this marks it dirty.
-    // (Stand-in for the AI extract path, which also writes via form.setValue
-    // / form.reset with keepDirty so the field ends up dirty.)
     const promptField = screen.getByDisplayValue('original prompt');
     await user.clear(promptField);
     await user.type(promptField, 'USER EDIT');
     expect(screen.getByDisplayValue('USER EDIT')).toBeInTheDocument();
 
-    // Server-side state changes underneath (someone else updated this row);
-    // a refresh would re-read it. Force a rerender so the drawer's effect
-    // observes the new query result.
-    liveAsset = { ...liveAsset, data: { ...liveAsset.data, prompt: 'stale server prompt' } };
+    liveAsset = {
+      ...liveAsset,
+      data: { ...liveAsset.data, prompt: 'stale server prompt' },
+    };
     await act(async () => {
-      rerender(<CharacterDrawer id={7} onClose={onClose} onCreated={onCreated} />);
+      rerender(<CharacterDrawer id={7} onClose={vi.fn()} onCreated={vi.fn()} />);
     });
 
-    // Without keepDirtyValues the field would now read "stale server prompt"
-    // and the user's unsaved edit would be lost.
     expect(screen.getByDisplayValue('USER EDIT')).toBeInTheDocument();
+  });
+
+  it('shows `必填` when persona is empty (and not when name is empty)', async () => {
+    liveAsset = structuredClone(initialAsset);
+    liveAsset.data.persona = '';
+    liveAsset.name = '';
+    render(<CharacterDrawer id={7} onClose={vi.fn()} onCreated={vi.fn()} />);
+
+    const user = userEvent.setup();
+    // Submitting should fail and surface the persona `必填` error
+    // (`name` is no longer required so it must not trigger its own error).
+    await user.click(screen.getByRole('button', { name: '保存' }));
+
+    expect(await screen.findByText('必填')).toBeInTheDocument();
+    expect(screen.getAllByText('必填')).toHaveLength(1);
+  });
+
+  it('AI 填入字段 runs extractFields against the description and merges', async () => {
+    liveAsset = structuredClone(initialAsset);
+    liveAsset.data.description = '一名古代男侠客';
+    render(
+      <>
+        <CharacterDrawer id={7} onClose={vi.fn()} onCreated={vi.fn()} />
+        <Toaster />
+      </>,
+    );
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: 'AI 填入字段' }));
+
+    // The mock returns { prompt: 'ai-patched prompt' }, which should overwrite
+    // the (clean) prompt textarea value.
+    expect(await screen.findByDisplayValue('ai-patched prompt')).toBeInTheDocument();
+  });
+
+  it('AutoComplete accepts free-text values not in the options list', async () => {
+    liveAsset = structuredClone(initialAsset);
+    render(<CharacterDrawer id={7} onClose={vi.fn()} onCreated={vi.fn()} />);
+
+    const user = userEvent.setup();
+    const eraInput = screen.getByLabelText('时代');
+    await user.clear(eraInput);
+    // `unicorn-era` is not in the mocked options list — typing it must succeed.
+    await user.type(eraInput, 'unicorn-era');
+    expect((eraInput as HTMLInputElement).value).toBe('unicorn-era');
   });
 });

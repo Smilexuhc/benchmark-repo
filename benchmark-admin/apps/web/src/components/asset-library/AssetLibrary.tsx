@@ -1,9 +1,9 @@
-import { useVirtualizer } from '@tanstack/react-virtual';
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { useDebounce } from 'use-debounce';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { trpc } from '@/lib/trpc';
+import { useVirtualizer } from '@tanstack/react-virtual';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useDebounce } from 'use-debounce';
 import { AssetCard, type AssetCardData } from './AssetCard';
 import { FilterPanel } from './FilterPanel';
 import { type AssetKind, buildServerFilters, useFilterFields, useFilters } from './useFilters';
@@ -52,7 +52,7 @@ export type AssetLibraryProps = {
   renderDrawer?: (props: {
     id: number;
     onClose: () => void;
-    onCreated: () => void;
+    onCreated: (newId: number) => void;
   }) => React.ReactNode;
   selectionMode?: 'none' | 'multi';
   selectedIds?: number[];
@@ -200,9 +200,12 @@ export function AssetLibrary({
         <DrawerHost
           id={drawerId === 'new' ? 0 : drawerId}
           onClose={() => setDrawerId(null)}
-          onCreated={() => {
+          onCreated={(newId) => {
+            // Keep the drawer open after create + flip it to edit mode for the
+            // new asset; legacy parity (U6). The drawer's create handler also
+            // refreshes the list-cache before calling onCreated.
             refetch();
-            setDrawerId(null);
+            setDrawerId(newId);
           }}
           render={renderDrawer}
         />
@@ -219,7 +222,7 @@ function DrawerHost({
 }: {
   id: number;
   onClose: () => void;
-  onCreated: () => void;
+  onCreated: (newId: number) => void;
   render: NonNullable<AssetLibraryProps['renderDrawer']>;
 }) {
   return <>{render({ id, onClose, onCreated })}</>;

@@ -1,13 +1,17 @@
-import { zodResolver } from '@hookform/resolvers/zod';
-import { useEffect } from 'react';
-import { type SubmitHandler, useForm } from 'react-hook-form';
-import { z } from 'zod';
+import { confirm } from '@/components/feedback/confirm';
+import { toast } from '@/components/feedback/toast';
+import { AutoComplete } from '@/components/ui/autocomplete';
 import { Button } from '@/components/ui/button';
-import { Drawer } from '@/components/ui/drawer';
+import { Drawer, DrawerFooter } from '@/components/ui/drawer';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { trpc } from '@/lib/trpc';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { useEffect, useRef } from 'react';
+import { type SubmitHandler, useForm } from 'react-hook-form';
+import { z } from 'zod';
 import { SceneViewColumn } from './SceneViewColumn';
-import { AiToolbar } from './shared/AiToolbar';
+import { AiLink } from './shared/AiToolbar';
 import { Field } from './shared/Field';
 import { ImageGrid } from './shared/ImageGrid';
 import { useAssetDrawer } from './shared/useAssetDrawer';
@@ -42,9 +46,16 @@ export function SceneDrawer({
 }: {
   id: number;
   onClose: () => void;
-  onCreated: () => void;
+  onCreated: (newId: number) => void;
 }) {
   const ctx = useAssetDrawer('scene', id);
+  const optionsQuery = trpc.assets.options.useQuery({ kind: 'scene', deletedOnly: false });
+  const deleteAsset = trpc.assets.delete.useMutation();
+  const restoreAsset = trpc.assets.restore.useMutation();
+  const attachImage = trpc.assets.attachImage.useMutation();
+  const getUploadUrl = trpc.mediaAssets.getUploadUrl.useMutation();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const form = useForm<SceneFormValues>({
     resolver: zodResolver(SceneFormSchema),
     defaultValues: EMPTY,
@@ -71,7 +82,10 @@ export function SceneDrawer({
 
   function buildPayload(values: SceneFormValues) {
     const elements = values.elements
-      ? values.elements.split(',').map((s) => s.trim()).filter(Boolean)
+      ? values.elements
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean)
       : undefined;
     return {
       name: values.name,
@@ -90,12 +104,14 @@ export function SceneDrawer({
   const onSubmit: SubmitHandler<SceneFormValues> = async (values) => {
     const payload = buildPayload(values);
     if (ctx.isNew) {
-      await ctx.create.mutateAsync({ kind: 'scene', ...payload });
+      const created = await ctx.create.mutateAsync({ kind: 'scene', ...payload });
       await ctx.refresh();
-      onCreated();
+      toast.success('场景已创建');
+      onCreated(created.id);
     } else {
       await ctx.update.mutateAsync({ kind: 'scene', id, ...payload });
       await ctx.refresh();
+      toast.success('已保存');
     }
   };
 
@@ -111,25 +127,41 @@ export function SceneDrawer({
     }
   }
 
-  async function handleExtract(text: string) {
+  async function handleExtract() {
     ctx.setAiError(null);
+    const text = (form.getValues('description') ?? '').trim();
+    if (!text) {
+      ctx.setAiError('请先填写描述');
+      return;
+    }
     try {
       const result = await ctx.extractFields.mutateAsync({ kind: 'scene', description: text });
       if (result.kind === 'scene') {
         const d = result.data;
         const current = form.getValues();
-        form.reset({
-          ...current,
-          scene_type: d.scene_type ?? current.scene_type,
-          mood: d.mood ?? current.mood,
-          elements: d.elements?.join(', ') ?? current.elements,
-          prompt: d.prompt ?? current.prompt,
-          description: d.description ?? current.description,
-        }, { keepDirty: true });
+        form.reset(
+          {
+            ...current,
+            scene_type: d.scene_type ?? current.scene_type,
+            mood: d.mood ?? current.mood,
+            elements: d.elements?.join(', ') ?? current.elements,
+            prompt: d.prompt ?? current.prompt,
+            description: d.description ?? current.description,
+          },
+          { keepDirty: true },
+        );
+        toast.success('已填入字段');
       }
     } catch (e) {
       ctx.setAiError(e instanceof Error ? e.message : '提取失败');
     }
+  }
+
+  async function handleCopyPrompt() {
+    const prompt = form.getValues('prompt');
+    if (!prompt) return;
+    await navigator.clipboard.writeText(prompt);
+    toast.success('已复制');
   }
 
   async function handleGenerateImage() {
@@ -151,55 +183,187 @@ export function SceneDrawer({
     }
   }
 
+  async function handleUploadClick() {
+    if (ctx.isNew) {
+      ctx.setAiError('请先保存场景再上传图像');
+      return;
+    }
+    fileInputRef.current?.click();
+  }
+
+  async function handleFileChosen(file: File) {
+    ctx.setAiError(null);
+    try {
+      const { uploadUrl, objectKey } = await getUploadUrl.mutateAsync({
+        mediaType: 'image',
+        filename: file.name,
+        contentType: file.type || 'application/octet-stream',
+      });
+      const putRes = await fetch(uploadUrl, {
+        method: 'PUT',
+        body: file,
+        headers: { 'Content-Type': file.type || 'application/octet-stream' },
+      });
+      if (!putRes.ok) throw new Error(`上传失败：${putRes.status}`);
+      await attachImage.mutateAsync({ id, objectKey, source: 'uploaded' });
+      await ctx.refresh();
+      toast.success('已上传');
+    } catch (e) {
+      ctx.setAiError(e instanceof Error ? e.message : '上传失败');
+    }
+  }
+
+  async function handleDelete() {
+    if (ctx.isNew) return;
+    const ok = await confirm({
+      title: '删除该场景？',
+      body: '删除后可在“已删除”视图恢复。',
+      danger: true,
+      confirmText: '删除',
+    });
+    if (!ok) return;
+    await deleteAsset.mutateAsync({ id });
+    await ctx.refresh();
+    toast.success('已删除');
+    onClose();
+  }
+
+  async function handleRestore() {
+    if (ctx.isNew) return;
+    await restoreAsset.mutateAsync({ id });
+    await ctx.refresh();
+    toast.success('已恢复');
+  }
+
   const images = ctx.asset && 'images' in ctx.asset ? ctx.asset.images : [];
+  const isDeleted = ctx.asset?.deletedAt != null;
+  const options = optionsQuery.data?.kind === 'scene' ? optionsQuery.data : undefined;
 
   return (
-    <Drawer open onClose={onClose} title={ctx.isNew ? '新建场景' : '编辑场景'} widthClassName="w-[640px] max-w-full">
-      <form className="space-y-4" onSubmit={form.handleSubmit(onSubmit)} noValidate>
-        <Field label="名称" error={form.formState.errors.name?.message} required>
-          <Input {...form.register('name')} />
+    <Drawer open onClose={onClose} title={ctx.isNew ? '新建场景' : '编辑场景'}>
+      <form className="space-y-6" onSubmit={form.handleSubmit(onSubmit)} noValidate>
+        <Field
+          label="描述"
+          trailing={
+            <AiLink busy={ctx.extractFields.isPending} busyLabel="解析中…" onClick={handleExtract}>
+              AI 填入字段
+            </AiLink>
+          }
+        >
+          <Textarea
+            rows={4}
+            placeholder="粘贴一段自由文本描述…"
+            {...form.register('description')}
+          />
         </Field>
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="时代">
-            <Input {...form.register('era')} />
+
+        <section className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="时代">
+              <AutoComplete
+                value={form.watch('era') ?? ''}
+                onChange={(v) => form.setValue('era', v, { shouldDirty: true })}
+                options={options?.era ?? []}
+                aria-label="时代"
+              />
+            </Field>
+            <Field label="场景类型">
+              <AutoComplete
+                value={form.watch('scene_type') ?? ''}
+                onChange={(v) => form.setValue('scene_type', v, { shouldDirty: true })}
+                options={options?.scene_type ?? []}
+                aria-label="场景类型"
+              />
+            </Field>
+            <Field label="氛围时段">
+              <AutoComplete
+                value={form.watch('mood') ?? ''}
+                onChange={(v) => form.setValue('mood', v, { shouldDirty: true })}
+                options={options?.mood ?? []}
+                aria-label="氛围时段"
+              />
+            </Field>
+            <Field label="题材">
+              <AutoComplete
+                value={form.watch('genre') ?? ''}
+                onChange={(v) => form.setValue('genre', v, { shouldDirty: true })}
+                options={options?.genre ?? []}
+                aria-label="题材"
+              />
+            </Field>
+          </div>
+
+          <Field label="名称" required error={form.formState.errors.name?.message}>
+            <Input {...form.register('name')} />
           </Field>
-          <Field label="题材">
-            <Input {...form.register('genre')} />
+          <Field label="元素（逗号分隔）">
+            <Input {...form.register('elements')} />
           </Field>
-          <Field label="场景类型">
-            <Input {...form.register('scene_type')} />
-          </Field>
-          <Field label="氛围">
-            <Input {...form.register('mood')} />
-          </Field>
-        </div>
-        <Field label="元素（逗号分隔）">
-          <Input {...form.register('elements')} />
-        </Field>
-        <Field label="描述">
-          <Textarea rows={3} {...form.register('description')} />
-        </Field>
-        <Field label="提示词">
+        </section>
+
+        <Field
+          label="提示词"
+          trailing={
+            <span className="flex items-center gap-3">
+              <AiLink
+                busy={ctx.generatePrompt.isPending}
+                busyLabel="生成中…"
+                onClick={handleGeneratePrompt}
+              >
+                AI 生成
+              </AiLink>
+              <AiLink onClick={handleCopyPrompt} disabled={!form.watch('prompt')}>
+                复制
+              </AiLink>
+            </span>
+          }
+        >
           <Textarea rows={3} {...form.register('prompt')} />
         </Field>
 
-        <AiToolbar
-          hasAsset={!ctx.isNew}
-          busy={{
-            prompt: ctx.generatePrompt.isPending,
-            extract: ctx.extractFields.isPending,
-            image: ctx.generateImage.isPending,
-          }}
-          error={ctx.aiError}
-          onGeneratePrompt={handleGeneratePrompt}
-          onExtractFields={handleExtract}
-          onGenerateImage={handleGenerateImage}
-        />
+        {ctx.aiError ? (
+          <p role="alert" className="text-xs text-[hsl(var(--destructive))]">
+            {ctx.aiError}
+          </p>
+        ) : null}
 
         {!ctx.isNew ? (
           <>
             <section aria-label="图像" className="space-y-2">
-              <h3 className="text-sm font-medium">图像</h3>
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-medium">图像</h3>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={ctx.generateImage.isPending}
+                    onClick={handleGenerateImage}
+                  >
+                    {ctx.generateImage.isPending ? '生成中…' : '生成图片'}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={getUploadUrl.isPending || attachImage.isPending}
+                    onClick={handleUploadClick}
+                  >
+                    {getUploadUrl.isPending || attachImage.isPending ? '上传中…' : '上传图片'}
+                  </Button>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) handleFileChosen(file);
+                      e.target.value = '';
+                    }}
+                  />
+                </div>
+              </div>
               <ImageGrid
                 images={images}
                 coverImageId={ctx.asset?.coverImageId ?? null}
@@ -217,14 +381,42 @@ export function SceneDrawer({
           </>
         ) : null}
 
-        <footer className="flex items-center justify-end gap-2 border-t border-[hsl(var(--border))] pt-3">
-          <Button type="button" variant="outline" onClick={onClose}>取消</Button>
-          <Button type="submit" disabled={form.formState.isSubmitting}>
-            {form.formState.isSubmitting ? '保存中…' : '保存'}
-          </Button>
-        </footer>
+        <DrawerFooter
+          left={
+            !ctx.isNew ? (
+              isDeleted ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={restoreAsset.isPending}
+                  onClick={handleRestore}
+                >
+                  恢复
+                </Button>
+              ) : (
+                <Button
+                  type="button"
+                  variant="destructive"
+                  disabled={deleteAsset.isPending}
+                  onClick={handleDelete}
+                >
+                  删除
+                </Button>
+              )
+            ) : null
+          }
+          right={
+            <>
+              <Button type="button" variant="outline" onClick={onClose}>
+                关闭
+              </Button>
+              <Button type="submit" disabled={form.formState.isSubmitting}>
+                {form.formState.isSubmitting ? '保存中…' : ctx.isNew ? '创建' : '保存'}
+              </Button>
+            </>
+          }
+        />
       </form>
     </Drawer>
   );
 }
-
