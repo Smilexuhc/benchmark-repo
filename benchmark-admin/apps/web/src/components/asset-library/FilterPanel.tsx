@@ -1,13 +1,9 @@
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
-import type { AssetFilters } from './useFilters';
+import type { AssetFilters, FilterField } from './useFilters';
 
-export type FilterField = {
-  key: keyof AssetFilters;
-  label: string;
-  options: readonly string[];
-};
+export type { FilterField };
 
 export type FilterPanelProps = {
   fields: FilterField[];

@@ -61,7 +61,7 @@ describe('AssetLibrary pagination', () => {
   it('renders page 1 and loads page 2 from the server cursor', async () => {
     render(
       <NuqsTestingAdapter>
-        <AssetLibrary kind="character" filterFields={[]} />
+        <AssetLibrary kind="character" />
       </NuqsTestingAdapter>,
     );
 

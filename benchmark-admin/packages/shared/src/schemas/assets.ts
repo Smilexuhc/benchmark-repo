@@ -111,3 +111,48 @@ export const AssetUpdate = z.discriminatedUnion('kind', [
 
 export type AssetInsertType = z.infer<typeof AssetInsert>;
 export type AssetUpdateType = z.infer<typeof AssetUpdate>;
+
+// ── Filter options (assets.options) ───────────────────────────────────────────
+// Returns the real distinct-value set per filter field for each asset kind, so
+// the admin UI can stop shipping hardcoded FIELDS arrays that drift from the
+// actual data (e.g. character `type` was `人类/动物/...` while the CSV stores
+// `亚洲人/欧洲人/非洲人/机器人/...`).
+
+export const AssetOptionsInput = z.object({
+  kind: z.enum(['character', 'scene', 'prop']),
+  deletedOnly: z.boolean().default(false),
+});
+
+export type AssetOptionsInputType = z.infer<typeof AssetOptionsInput>;
+
+const StringArray = z.array(z.string());
+
+export const CharacterOptions = z.object({
+  kind: z.literal('character'),
+  era: StringArray,
+  genre: StringArray,
+  type: StringArray,
+  gender: StringArray,
+  age: StringArray,
+});
+
+export const SceneOptions = z.object({
+  kind: z.literal('scene'),
+  era: StringArray,
+  genre: StringArray,
+  scene_type: StringArray,
+  mood: StringArray,
+});
+
+export const PropOptions = z.object({
+  kind: z.literal('prop'),
+  category: StringArray,
+});
+
+export const AssetOptionsOutput = z.discriminatedUnion('kind', [
+  CharacterOptions,
+  SceneOptions,
+  PropOptions,
+]);
+
+export type AssetOptionsOutputType = z.infer<typeof AssetOptionsOutput>;
