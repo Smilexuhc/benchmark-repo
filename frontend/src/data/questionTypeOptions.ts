@@ -1,338 +1,229 @@
 export interface QuestionTypeOption {
   value: string
   label: string
+  code?: string
+  definition?: string
   children?: QuestionTypeOption[]
 }
 
+function node(
+  code: string,
+  value: string,
+  definition = '',
+  children?: QuestionTypeOption[],
+): QuestionTypeOption {
+  return {
+    value,
+    label: code ? `${code} ${value}` : value,
+    code,
+    definition,
+    children,
+  }
+}
+
 export const QUESTION_TYPE_OPTIONS: QuestionTypeOption[] = [
-  {
-    value: '单镜头',
-    label: '单镜头',
-    children: [
-      {
-        value: '1.创作意图与提示词理解/遵循',
-        label: '1.创作意图与提示词理解/遵循',
-        children: [
-          { value: '极简提示词理解', label: '1.极简提示词理解' },
-          { value: '主体、动作、场景核心基础测试', label: '2.主体、动作、场景核心基础测试' },
-          { value: '复杂提示词与多条件约束遵循', label: '3.复杂提示词与多条件约束遵循' },
-          { value: '抽象语义、情绪描述与隐喻理解', label: '4.抽象语义、情绪描述与隐喻理解' },
-          { value: '专业剧本术语与创作指令理解', label: '5.专业剧本术语与创作指令理解' },
-          { value: '动作顺序与因果关系遵循', label: '6.动作顺序与因果关系遵循' },
-          { value: '否定约束遵循', label: '7.否定约束遵循' },
-          { value: '参考资产继承范围控制', label: '8.参考资产继承范围控制' },
-        ],
-      },
-      {
-        value: '2.人物与主体呈现',
-        label: '2.人物与主体呈现',
-        children: [
-          { value: '人物身份与人脸稳定性', label: '1.人物身份与人脸稳定性' },
-          { value: '服饰、发型、配饰一致性', label: '2.服饰、发型、配饰一致性' },
-          { value: '人物体态、年龄、肤色稳定性', label: '3.人物体态、年龄、肤色稳定性' },
-          { value: '动物与非人主体真实感', label: '4.动物与非人主体真实感' },
-          { value: '多主体复杂稳定性', label: '5.多主体复杂稳定性' },
-        ],
-      },
-      {
-        value: '3.场面调度与空间关系',
-        label: '3.场面调度与空间关系',
-        children: [
-          { value: '人物站位合理性', label: '1.人物站位合理性' },
-          { value: '主次关系与画面重心', label: '2.主次关系与画面重心' },
-          { value: '人物距离与互动空间', label: '3.人物距离与互动空间' },
-          { value: '大小比例与透视关系', label: '4.大小比例与透视关系' },
-          { value: '出入画或运动动线', label: '5.出入画或运动动线' },
-          { value: '复杂多人站位', label: '6.复杂多人站位' },
-        ],
-      },
-      {
-        value: '4.动作、表演与物理反馈',
-        label: '4.动作、表演与物理反馈',
-        children: [
-          { value: '简单动作执行', label: '1.简单动作执行' },
-          { value: '复杂动作执行', label: '2.复杂动作执行' },
-          { value: '精细动作与手部表现', label: '3.精细动作与手部表现' },
-          { value: '表情、眼神与微表情', label: '4.表情、眼神与微表情' },
-          { value: '动作连续性与姿态稳定', label: '5.动作连续性与姿态稳定' },
-          { value: '受力、碰撞与攻击反馈', label: '6.受力、碰撞与攻击反馈' },
-          { value: '行为逻辑合理性', label: '7.行为逻辑合理性' },
-        ],
-      },
-      {
-        value: '5.场景、道具与画面融合',
-        label: '5.场景、道具与画面融合',
-        children: [
-          { value: '场景布局合理性', label: '1.场景布局合理性' },
-          { value: '人物与场景融合度', label: '2.人物与场景融合度' },
-          { value: '人物与场景交互', label: '3.人物与场景交互' },
-          { value: '道具比例与材质可信度', label: '4.道具比例与材质可信度' },
-          { value: '道具使用与物理接触', label: '5.道具使用与物理接触' },
-          { value: '自然现象与物质模拟', label: '6.自然现象与物质模拟' },
-          { value: '画面文字渲染', label: '7.画面文字渲染' },
-          { value: '光影、色调与质感', label: '8.光影、色调与质感' },
-        ],
-      },
-      {
-        value: '6.镜头语言与视觉风格',
-        label: '6.镜头语言与视觉风格',
-        children: [
-          { value: '景别、构图与主体位置', label: '1.景别、构图与主体位置' },
-          { value: '基础运镜执行', label: '2.基础运镜执行' },
-          { value: '复杂运镜执行', label: '3.复杂运镜执行' },
-          { value: '焦段、景深、焦点、曝光控制', label: '4.焦段、景深、焦点、曝光控制' },
-          { value: '镜头节奏与视觉重点', label: '5.镜头节奏与视觉重点' },
-          { value: '变速摄影控制', label: '6.变速摄影控制' },
-          { value: '自然镜头切换合理性', label: '7.自然镜头切换合理性' },
-          { value: '视觉风格控制', label: '8.视觉风格控制' },
-        ],
-      },
-      {
-        value: '7.台词、声音与字幕控制',
-        label: '7.台词、声音与字幕控制',
-        children: [
-          { value: '台词文本遵循', label: '1.台词文本遵循' },
-          { value: '台词、旁白与内心独白归属', label: '2.台词、旁白与内心独白归属' },
-          { value: '口型与发声同步', label: '3.口型与发声同步' },
-          { value: '语速、语气与情绪表达', label: '4.语速、语气与情绪表达' },
-          { value: '人物音色与参考音频一致性', label: '5.人物音色与参考音频一致性' },
-          { value: '音乐风格与画面匹配', label: '6.音乐风格与画面匹配' },
-          { value: '音效对象、时机与质感', label: '7.音效对象、时机与质感' },
-          { value: '字幕内容、样式与位置控制', label: '8.字幕内容、样式与位置控制' },
-        ],
-      },
-    ],
-  },
-  {
-    value: '连续镜头 2*15s',
-    label: '连续镜头 2*15s',
-    children: [
-      {
-        value: '1.跨镜头人物与主体连续性',
-        label: '1.跨镜头人物与主体连续性',
-        children: [
-          { value: '人脸及人物特征连续性', label: '1.人脸及人物特征连续性' },
-          { value: '服饰、发型、配饰连续性', label: '2.服饰、发型、配饰连续性' },
-          { value: '人物状态连续性', label: '3.人物状态连续性' },
-          { value: '多人物身份区分与防串脸', label: '4.多人物身份区分与防串脸' },
-          { value: '动物与非人主体连续性', label: '5.动物与非人主体连续性' },
-          { value: '参考主体跨镜头保持', label: '6.参考主体跨镜头保持' },
-        ],
-      },
-      {
-        value: '2.站位、空间与调度连续性',
-        label: '2.站位、空间与调度连续性',
-        children: [
-          { value: '相邻镜头站位衔接', label: '1.相邻镜头站位衔接' },
-          { value: '人物朝向与视线衔接', label: '2.人物朝向与视线衔接' },
-          { value: '人物距离与空间关系衔接', label: '3.人物距离与空间关系衔接' },
-          { value: '出入画动线衔接', label: '4.出入画动线衔接' },
-          { value: '多人站位关系衔接', label: '5.多人站位关系衔接' },
-          { value: '镜头切换后的透视与比例一致', label: '6.镜头切换后的透视与比例一致' },
-        ],
-      },
-      {
-        value: '3.动作与剪辑连续性',
-        label: '3.动作与剪辑连续性',
-        children: [
-          { value: '动作姿态接续', label: '1.动作姿态接续' },
-          { value: '动作方向接续', label: '2.动作方向接续' },
-          { value: '动作节奏接续', label: '3.动作节奏接续' },
-          { value: '受击、碰撞与反馈接续', label: '4.受击、碰撞与反馈接续' },
-          { value: '中景到近景的连续性', label: '5.中景到近景的连续性' },
-          { value: '剪辑点可用性', label: '6.剪辑点可用性' },
-        ],
-      },
-      {
-        value: '4.场景、时间与世界状态连续性',
-        label: '4.场景、时间与世界状态连续性',
-        children: [
-          { value: '场景布置及状态连续性', label: '1.场景布置及状态连续性' },
-          { value: '时间、天气与光影连续性', label: '2.时间、天气与光影连续性' },
-          { value: '道具位置与外观连续性', label: '3.道具位置与外观连续性' },
-          { value: '道具损坏、展开、变形状态连续性', label: '4.道具损坏、展开、变形状态连续性' },
-          { value: '人物与道具交互结果连续性', label: '5.人物与道具交互结果连续性' },
-          { value: '场景回访一致性', label: '6.场景回访一致性' },
-        ],
-      },
-      {
-        value: '5.声音、台词与字幕连续性',
-        label: '5.声音、台词与字幕连续性',
-        children: [
-          { value: '人物音色跨镜头连续性', label: '1.人物音色跨镜头连续性' },
-          { value: '语气、节奏与情绪连续性', label: '2.语气、节奏与情绪连续性' },
-          { value: '对话关系与说话对象连续性', label: '3.对话关系与说话对象连续性' },
-          { value: '口型与台词跨镜头衔接', label: '4.口型与台词跨镜头衔接' },
-          { value: '背景音乐与音效连续性', label: '5.背景音乐与音效连续性' },
-        ],
-      },
-    ],
-  },
-  {
-    value: '长视频 60s',
-    label: '长视频 60s',
-    children: [
-      {
-        value: '1.剧本覆盖基础测试',
-        label: '1.剧本覆盖基础测试',
-        children: [
-          { value: '关键场景覆盖', label: '1.关键场景覆盖' },
-          { value: '关键角色覆盖', label: '2.关键角色覆盖' },
-          { value: '关键动作与事件覆盖', label: '3.关键动作与事件覆盖' },
-          { value: '多场景切换合理性', label: '4.多场景切换合理性' },
-          { value: '整段主题与情绪基调保持', label: '5.整段主题与情绪基调保持' },
-        ],
-      },
-      {
-        value: '2.长程主体一致性',
-        label: '2.长程主体一致性',
-        children: [
-          { value: '角色长程一致性（形象、状态）', label: '1.角色长程一致性（形象、状态）' },
-          { value: '角色情绪变化合理性', label: '2.角色情绪变化合理性' },
-          { value: '多角色关系保持', label: '3.多角色关系保持' },
-          { value: '人物声音长程一致性', label: '4.人物声音长程一致性' },
-        ],
-      },
-      {
-        value: '3.长程场面调度与空间关系',
-        label: '3.长程场面调度与空间关系',
-        children: [
-          { value: '多镜头站位连续性', label: '1.多镜头站位连续性' },
-          { value: '多人物调度连续性', label: '2.多人物调度连续性' },
-          { value: '空间关系长程稳定性', label: '3.空间关系长程稳定性' },
-          { value: '同一场景回访一致性', label: '4.同一场景回访一致性' },
-          { value: '人物移动路径连续性', label: '5.人物移动路径连续性' },
-          { value: '场景切换中的方位感保持', label: '6.场景切换中的方位感保持' },
-        ],
-      },
-      {
-        value: '4.长程世界状态追踪',
-        label: '4.长程世界状态追踪',
-        children: [
-          { value: '场景状态延续', label: '1.场景状态延续' },
-          { value: '道具状态延续', label: '2.道具状态延续' },
-          { value: '人物受伤、脏污、疲惫状态延续', label: '3.人物受伤、脏污、疲惫状态延续' },
-          { value: '天气、时间与光影变化延续', label: '4.天气、时间与光影变化延续' },
-          { value: '战斗、破坏与特效结果延续', label: '5.战斗、破坏与特效结果延续' },
-          { value: '世界状态变化符合剧情因果', label: '6.世界状态变化符合剧情因果' },
-        ],
-      },
-      {
-        value: '5.长程动作、特效与镜头节奏',
-        label: '5.长程动作、特效与镜头节奏',
-        children: [
-          { value: '复杂动作段落连续性', label: '1.复杂动作段落连续性' },
-          { value: '打斗与攻击反馈连续性', label: '2.打斗与攻击反馈连续性' },
-          { value: '特效与人物/场景融合', label: '3.特效与人物/场景融合' },
-          { value: '运镜与空间关系保持', label: '4.运镜与空间关系保持' },
-          { value: '镜头节奏服务叙事', label: '5.镜头节奏服务叙事' },
-          { value: '动作段落成片可剪辑性', label: '6.动作段落成片可剪辑性' },
-        ],
-      },
-      {
-        value: '6.整段交付可用性',
-        label: '6.整段交付可用性',
-        children: [
-          { value: '一分钟样片完整度', label: '1.一分钟样片完整度' },
-          { value: '穿帮严重程度', label: '2.穿帮严重程度' },
-        ],
-      },
-    ],
-  },
+  node('1', '单镜头', '', [
+    node('1.1', '提示词遵循/参考绑定', '', [
+      node('1.1.1', '核心文本指令遵循', '检查文本指令中的主体、动作、场景、情绪和基础要求是否被正确执行'),
+      node('1.1.2', '图片参考遵循', '检查角色图中的身份、人脸、体态和核心外观是否绑定到视频主体'),
+      node('1.1.3', '声音与音色参考遵循', '检查声音、音色、说话人、配乐或音效参考是否按要求正确使用'),
+      node('1.1.4', '复杂参考遵循', '检查多主体、多场景、多音频等复杂参考是否被同时遵循'),
+      node('1.1.5', '高信息密度参考图', '检查满墙海报、复杂工作台、仪表盘、货架、地图等高密度信息是否可保留'),
+      node('1.1.6', '否定约束遵循', '检查不要字幕、不要说话、不要音乐、不要继承背景等禁止项是否被避开'),
+      node('1.1.7', '多条件约束遵循', '检查多个主体、动作、风格、空间、声音和输出格式是否能同时满足'),
+      node('1.1.8', '影视专业术语遵循', '检查 OTS、POV、OS、VO、低角度、浅景深等影视术语是否被正确执行'),
+      node('1.1.9', '长难提示词遵循', '检查复杂创作指令中的长提示词是否被完整理解和执行'),
+    ]),
+    node('1.2', '人物与角色', '', [
+      node('1.2.1', '人脸与身份稳定性', '检查主体在运动和表演过程中是否保持同一身份、五官和年龄感'),
+      node('1.2.2', '多族裔主体一致性', '检查人物体型、年龄感、肤色和身体比例是否可信稳定'),
+      node('1.2.3', '服饰、发型、配饰稳定性', '检查角色外观细节在单镜头内是否稳定、不漂移、不变形'),
+      node('1.2.4', '角色状态呈现', '检查疲惫、受伤、脏污、身份状态或职业状态是否明确可信'),
+      node('1.2.5', '动物与非人主体真实感', '检查动物、机器人或其他非人主体的结构、运动和质感是否可信'),
+      node('1.2.6', '多主体一致性', '检查多个角色是否身份清晰、特征不串、不融合、不丢失'),
+      node('1.2.7', '跨类型交互', '检查人与动物、机器人、道具或其他类型主体之间的交互是否可信'),
+    ]),
+    node('1.3', '场景与空间', '', [
+      node('1.3.1', '场景参考还原度', '检查参考场景的核心空间布局、关键元素和视觉锚点是否被正确保留'),
+      node('1.3.2', '空间比例与透视', '检查人物、家具、建筑、道具之间的尺度关系和透视是否可信'),
+      node('1.3.3', '人物场景融合、交互', '检查人物与门窗、墙面、家具等场景元素的遮挡、透射和穿帮是否真实'),
+      node('1.3.4', '场景可行动性', '检查场景是否像真实可使用空间，门、桌面、通道等是否可行动'),
+      node('1.3.5', '场景状态变化', '检查场景是否能基于提示词发生真实变化，如开关、破裂、雨水痕迹或整洁度变化'),
+      node('1.3.6', '物理与自然现象', '检查雨雪、烟雾、火焰、液体、风等物理或自然现象是否可信'),
+    ]),
+    node('1.4', '表演与动作', '', [
+      node('1.4.1', '简单动作执行', '检查走路、转身、坐下、抬手等基础动作是否自然完成'),
+      node('1.4.2', '表情、眼神与情绪表演', '检查面部表情、眼神、微表情和情绪层次是否自然可信'),
+      node('1.4.3', '精细动作与手部表现', '检查抓握、拿取、书写、触碰等精细动作和手部结构是否可信'),
+      node('1.4.4', '道具参与动作', '检查角色拿取、使用、传递、挥舞或操作道具时动作是否自然可信'),
+      node('1.4.5', '复杂动作执行', '检查奔跑、舞蹈、打斗、追逐等复杂动作是否连贯可信'),
+      node('1.4.6', '非人主体运动', '检查非人主体运动是否符合其结构与物种/机械属性'),
+      node('1.4.7', '拟人化运动', '检查非人主体拟人化运动是否自然可识别'),
+      node('1.4.8', '反现实运动', '检查超现实、反重力、夸张变形等运动是否符合设定'),
+      node('1.4.9', '多人表演与动作配合', '检查多人对话、争执、协作、追逐或打斗中的动作配合是否清楚可信'),
+      node('1.4.10', '物理反馈、受力', '检查推拉、碰撞、受击、攻击等力的结果是否符合常识'),
+    ]),
+    node('1.5', '调度与场面组织', '', [
+      node('1.5.1', '人物站位合理性', '检查人物在场景中的站位是否合理、清晰、符合关系'),
+      node('1.5.2', '人物距离与互动空间', '检查聊天、争吵、拥抱、跟随等关系中的人物距离是否合理'),
+      node('1.5.3', '视线组织', '检查角色看向、对视、回头和关注目标是否组织清楚'),
+      node('1.5.4', '主次关系与画面重心', '检查画面是否突出主要角色、关键动作或叙事重点'),
+      node('1.5.5', '出入画与运动动线', '检查角色进出画面和移动路线是否自然、可追踪'),
+      node('1.5.6', '多人物场面组织', '检查群像、队列、会议、宴会等多主体调度是否清楚不混乱'),
+    ]),
+    node('1.6', '镜头语言', '', [
+      node('1.6.1', '景别控制', '检查近景、中景、远景、特写等景别是否符合叙事关系'),
+      node('1.6.2', '镜头角度', '检查低角度、高角度、俯拍、仰拍、过肩等角度是否正确'),
+      node('1.6.3', '构图与主体位置', '检查主体位置、留白、前后景和构图是否服务当前表达'),
+      node('1.6.4', '景深与焦点控制', '检查浅景深、焦点锁定、焦点转移和主体清晰度是否受控'),
+      node('1.6.5', '焦段与透视表达', '检查广角、长焦、压缩感、空间夸张等焦段表达是否正确'),
+      node('1.6.6', '运动镜头控制', '检查推、拉、摇、移、跟拍等镜头运动是否平稳、方向清晰且目的明确'),
+      node('1.6.7', '复杂镜头调度', '检查环绕、变轨、穿越空间、长路径跟拍等镜头运动与主体调度是否共同成立'),
+      node('1.6.8', '变速摄影', '检查慢动作、快动作、speed ramping 等速度变化是否自然'),
+    ]),
+    node('1.7', '声音与画面关系', '', [
+      node('1.7.1', '对白', '检查对白内容、说话人归属、口型同步和语气情绪是否成立'),
+      node('1.7.2', '字幕', '检查字幕内容、样式、位置、时长和遮挡是否受控'),
+      node('1.7.3', '环境声', '检查环境声是否匹配场景空间、距离、天气和动作状态'),
+      node('1.7.4', '音效', '检查脚步、碰撞、开门、布料、环境物件等音效是否对象明确且质感可信'),
+      node('1.7.5', '音乐', '检查配乐风格、进入时机、节奏和情绪功能是否符合画面'),
+      node('1.7.6', '静默', '检查无声、停顿、压抑或留白是否能被正确控制并服务情绪'),
+      node('1.7.7', '画外音', '检查旁白、OS、VO、内心独白等画外声音是否归属清楚且不混乱'),
+      node('1.7.8', '音画对位', '检查声音是否能与画面形成同步、反差、预示、遮蔽或情绪补充'),
+      node('1.7.9', '多语种 & 方言 & 跨语种', '检查多语种、方言和跨语种说话关系是否成立'),
+      node('1.7.10', '语速', '检查说话长度和语速控制是否符合要求'),
+    ]),
+    node('1.8', '画面&特效', '', [
+      node('1.8.1', '画面渲染文字', '检查画面内文字是否可读、位置正确、样式稳定且不乱码'),
+      node('1.8.2', '分镜 / 多格 / 漫画式视觉结构', '检查分镜、多格或漫画式视觉结构是否清晰可控'),
+      node('1.8.3', '画风 2D / 3D / 真人写实', '检查指定画风类型是否稳定，且与主体、场景和动作一致'),
+      node('1.8.4', '光影与色调', '检查光线方向、明暗关系、色调和整体质感是否符合设定'),
+      node('1.8.5', '视觉特效与变形', '检查特效、变形、能量、粒子或风格化效果是否可信并融合画面'),
+    ]),
+    node('1.9', '综合应用题', '', [
+      node('1.9.1', '短剧', '检查短剧场景中的人物、情节、表演、镜头和声音综合完成度'),
+      node('1.9.2', '影视剧', '检查影视剧语境中的叙事、调度、镜头和表演综合完成度'),
+      node('1.9.3', '动画', '检查动画语境中的角色、动作、风格和叙事综合完成度'),
+    ]),
+  ]),
+  node('2', '连续镜头', '', [
+    node('2.1', '角色连续性', '', [
+      node('2.1.1', '角色身份连续', '检查切镜后人脸、五官、年龄感和体态是否保持同一身份'),
+      node('2.1.2', '服饰妆造连续', '检查服装、发型、配饰和妆容是否跨镜头稳定'),
+      node('2.1.3', '角色状态连续', '检查伤势、脏污、疲惫、湿身、持物和姿态状态是否延续'),
+      node('2.1.4', '角色情绪连续', '检查愤怒、恐惧、犹豫、悲伤等情绪是否承接上一镜头'),
+      node('2.1.5', '非人主体一致性保持', '检查动物、机器人或其他非人主体是否跨镜头保持稳定'),
+      node('2.1.6', '多角色一致性保持', '检查多人场景中角色身份、关系和区分度是否跨镜头保持'),
+    ]),
+    node('2.2', '场景连续性', '', [
+      node('2.2.1', '场景参考连续', '检查参考场景的核心布局、视觉锚点、门窗家具是否跨镜头保持'),
+      node('2.2.2', '场景状态连续', '检查灯光开关、门窗开合、道具位置、损坏程度和整洁度是否延续'),
+      node('2.2.3', '时间与天气连续', '检查昼夜、天气、雨雪、雾和光线方向是否跨镜头稳定'),
+      node('2.2.4', '画面风格连续', '检查光线、色彩、画面质感和整体视觉风格是否跨镜头一致'),
+    ]),
+    node('2.3', '人物调度与动作连续性', '', [
+      node('2.3.1', '人物站位连续', '检查切镜前后人物在场景中的位置是否接得上'),
+      node('2.3.2', '人物姿态一致性', '检查坐站躺靠等基础姿态、身体朝向、视线方向和对象是否跨镜头一致'),
+      node('2.3.3', '单人动作连续', '检查单人动作的姿态、方向和节奏是否能从前一镜头接到后一镜头'),
+      node('2.3.4', '多人站位连续', '检查多人之间的相对位置、队形、左右关系和主次关系是否跨镜头保持'),
+      node('2.3.5', '多人动作配合连续', '检查多人对话、协作、追逐、打斗中的动作节奏、互动关系和配合是否延续'),
+      node('2.3.6', '攻防与受力反馈连续', '检查打斗、碰撞、受击、推拉等反应是否前后对应'),
+    ]),
+    node('2.4', '声音连续性', '', [
+      node('2.4.1', '对白连续', '检查台词内容、说话人、语气和对话关系是否跨镜头延续'),
+      node('2.4.2', '口型跨镜头衔接', '检查切镜处台词和口型是否自然接续'),
+      node('2.4.3', '角色音色连续', '检查同一角色声音、年龄感和声线是否跨镜头稳定'),
+      node('2.4.4', '环境声连续', '检查房间底噪、街道声、雨声、风声等环境声是否延续'),
+      node('2.4.5', '音乐与音效连续', '检查配乐、脚步、碰撞、门声等声音事件是否跨镜头连续'),
+    ]),
+  ]),
+  node('3', '长镜头', '', [
+    node('3.1', '综合应用题', '', [
+      node('3.1.1', '短剧', '检查长镜头短剧情境中的叙事、表演、调度和声音综合完成度'),
+      node('3.1.2', '影视剧', '检查长镜头影视剧场景中的叙事、调度、表演和镜头综合完成度'),
+      node('3.1.3', '动画', '检查长镜头动画场景中的风格、动作、角色和叙事综合完成度'),
+    ]),
+  ]),
 ]
 
 export interface StatsGroup {
-  shot_type: string
-  question_type: string
+  category_l1: string
+  category_l2: string
+  category_l3: string
   count: number
 }
 
 export const UNCLASSIFIED_L2_VALUE = '__unclassified__'
 
-// 把 (shot_type, question_type) 题数统计拼到 Cascader 选项 label 上 -> "原 label (N)"
-// L3 精确匹配；L2 = 子 L3 之和 + 「待归类」收尾；L1 = 该 shot_type 全量。
-// 不在树里的 legacy question_type 自动归入「待归类」L2，避免被统计遗漏。
+function pathKey(l1: string, l2: string, l3: string) {
+  return `${l1}|${l2}|${l3}`
+}
+
+function withCount(label: string, count: number) {
+  return `${label} (${count})`
+}
+
+function findNode(
+  categoryL1: string,
+  categoryL2?: string,
+  categoryL3?: string,
+): QuestionTypeOption | undefined {
+  const l1 = QUESTION_TYPE_OPTIONS.find((o) => o.value === categoryL1)
+  if (!l1 || categoryL2 === undefined) return l1
+  const l2 = l1.children?.find((o) => o.value === categoryL2)
+  if (!l2 || categoryL3 === undefined) return l2
+  return l2.children?.find((o) => o.value === categoryL3)
+}
+
+// 把新分类统计拼到 Cascader 选项 label 上 -> "原 label (N)"。
 export function buildCascaderOptionsWithCounts(
   groups: StatsGroup[],
 ): QuestionTypeOption[] {
-  const byShotQ = new Map<string, number>()
+  const byPath = new Map<string, number>()
   for (const g of groups) {
-    byShotQ.set(`${g.shot_type}|${g.question_type}`, g.count)
+    byPath.set(pathKey(g.category_l1, g.category_l2, g.category_l3), g.count)
   }
-  const withCount = (label: string, count: number) => `${label} (${count})`
-  // 树里已知的 (shot_type|question_type) 集合，用于挑出 legacy
-  const knownPairs = new Set<string>()
-  for (const l1 of QUESTION_TYPE_OPTIONS) {
-    for (const l2 of l1.children ?? []) {
-      for (const l3 of l2.children ?? []) {
-        knownPairs.add(`${l1.value}|${l3.value}`)
-      }
-    }
-  }
+
   return QUESTION_TYPE_OPTIONS.map((l1) => {
     let l1Count = 0
     const l2List: QuestionTypeOption[] = (l1.children ?? []).map((l2) => {
       let l2Count = 0
       const l3s = (l2.children ?? []).map((l3) => {
-        const count = byShotQ.get(`${l1.value}|${l3.value}`) || 0
+        const count = byPath.get(pathKey(l1.value, l2.value, l3.value)) || 0
         l2Count += count
         return { ...l3, label: withCount(l3.label, count) }
       })
       l1Count += l2Count
       return { ...l2, label: withCount(l2.label, l2Count), children: l3s }
     })
-    // 收集该 shot_type 下所有 legacy 的 question_type
-    const legacy: QuestionTypeOption[] = []
-    let legacyCount = 0
-    for (const [key, count] of byShotQ) {
-      const [shot, q] = key.split('|')
-      if (shot !== l1.value) continue
-      if (!q) continue
-      if (knownPairs.has(key)) continue
-      legacy.push({ value: q, label: withCount(q, count) })
-      legacyCount += count
-    }
-    if (legacy.length > 0) {
-      legacy.sort((a, b) => a.value.localeCompare(b.value))
-      l2List.push({
-        value: UNCLASSIFIED_L2_VALUE,
-        label: withCount('待归类', legacyCount),
-        children: legacy,
-      })
-      l1Count += legacyCount
-    }
-    return {
-      ...l1,
-      label: withCount(l1.label, l1Count),
-      children: l2List,
-    }
+    return { ...l1, label: withCount(l1.label, l1Count), children: l2List }
   })
 }
 
-// 根据 shot_type + question_type 反向查找 Cascader 当前值（[L1.value, L2.value, L3.value]）
 export function findCascaderValue(
-  shotType: string,
-  questionType: string,
+  categoryL1: string,
+  categoryL2: string,
+  categoryL3: string,
 ): string[] | undefined {
-  const l1 = QUESTION_TYPE_OPTIONS.find((o) => o.value === shotType)
-  if (!l1) return undefined
-  for (const l2 of l1.children ?? []) {
-    const l3 = l2.children?.find((o) => o.value === questionType)
-    if (l3) return [l1.value, l2.value, l3.value]
-  }
-  return undefined
+  const l3 = findNode(categoryL1, categoryL2, categoryL3)
+  return l3 ? [categoryL1, categoryL2, categoryL3] : undefined
 }
 
-// 反查 Cascader 路径上的 label（带序号），用于卡片标题展示
 export function findCascaderLabels(
-  shotType: string,
-  questionType: string,
+  categoryL1: string,
+  categoryL2: string,
+  categoryL3: string,
 ): string[] | undefined {
-  const l1 = QUESTION_TYPE_OPTIONS.find((o) => o.value === shotType)
-  if (!l1) return undefined
-  for (const l2 of l1.children ?? []) {
-    const l3 = l2.children?.find((o) => o.value === questionType)
-    if (l3) return [l1.label, l2.label, l3.label]
-  }
-  return undefined
+  const l1 = findNode(categoryL1)
+  const l2 = findNode(categoryL1, categoryL2)
+  const l3 = findNode(categoryL1, categoryL2, categoryL3)
+  return l1 && l2 && l3 ? [l1.label, l2.label, l3.label] : undefined
+}
+
+export function findCategoryDefinition(
+  categoryL1: string,
+  categoryL2: string,
+  categoryL3: string,
+): string {
+  return findNode(categoryL1, categoryL2, categoryL3)?.definition || ''
 }

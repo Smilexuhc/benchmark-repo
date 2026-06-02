@@ -81,6 +81,10 @@ VIDEO_BENCHMARK_FIELDS = [
     "task_type",
     "question_type",
     "manual_tag",
+    "category_l1",
+    "category_l2",
+    "category_l3",
+    "category_definition",
     "difficulty",
     "scene",
     "screen_size",
@@ -105,6 +109,9 @@ VIDEO_BENCHMARK_FILTER_FIELDS = [
     "shot_type",
     "task_type",
     "question_type",
+    "category_l1",
+    "category_l2",
+    "category_l3",
     "difficulty",
     "scene",
     "screen_size",
@@ -115,6 +122,10 @@ VIDEO_BENCHMARK_SEARCH_FIELDS = [
     "task_type",
     "question_type",
     "manual_tag",
+    "category_l1",
+    "category_l2",
+    "category_l3",
+    "category_definition",
     "scene",
     "screen_size",
     "video_input",
@@ -1001,7 +1012,9 @@ def create_video_benchmark_item(conn, payload) -> int:
     row = conn.execute(
         """
         INSERT INTO video_benchmark_items (
-            shot_type, task_type, question_type, manual_tag, difficulty, scene, screen_size,
+            shot_type, task_type, question_type, manual_tag,
+            category_l1, category_l2, category_l3, category_definition,
+            difficulty, scene, screen_size,
             character_image_asset, scene_image_asset, prop_image_asset,
             audio_input, video_input, text_prompt, judging_criteria, video_output, score,
             character_image_id, scene_image_id, prop_image_id, audio_input_id,
@@ -1009,7 +1022,9 @@ def create_video_benchmark_item(conn, payload) -> int:
             created_at, updated_at
         )
         VALUES (
-            %(shot_type)s, %(task_type)s, %(question_type)s, %(manual_tag)s, %(difficulty)s, %(scene)s, %(screen_size)s,
+            %(shot_type)s, %(task_type)s, %(question_type)s, %(manual_tag)s,
+            %(category_l1)s, %(category_l2)s, %(category_l3)s, %(category_definition)s,
+            %(difficulty)s, %(scene)s, %(screen_size)s,
             %(character_image_asset)s, %(scene_image_asset)s, %(prop_image_asset)s,
             %(audio_input)s, %(video_input)s, %(text_prompt)s, %(judging_criteria)s, %(video_output)s, %(score)s,
             %(character_image_id)s, %(scene_image_id)s, %(prop_image_id)s, %(audio_input_id)s,
@@ -1035,6 +1050,10 @@ def update_video_benchmark_item(conn, item_id: int, payload) -> bool:
             task_type = %(task_type)s,
             question_type = %(question_type)s,
             manual_tag = %(manual_tag)s,
+            category_l1 = %(category_l1)s,
+            category_l2 = %(category_l2)s,
+            category_l3 = %(category_l3)s,
+            category_definition = %(category_definition)s,
             difficulty = %(difficulty)s,
             scene = %(scene)s,
             screen_size = %(screen_size)s,
@@ -1116,6 +1135,9 @@ def list_video_benchmark_items(
     shot_type: str | None = None,
     task_type: str | None = None,
     question_type: str | None = None,
+    category_l1: str | None = None,
+    category_l2: str | None = None,
+    category_l3: str | None = None,
     scene: str | None = None,
     screen_size: str | None = None,
     score: int | None = None,
@@ -1129,6 +1151,9 @@ def list_video_benchmark_items(
             "shot_type": shot_type,
             "task_type": task_type,
             "question_type": question_type,
+            "category_l1": category_l1,
+            "category_l2": category_l2,
+            "category_l3": category_l3,
             "scene": scene,
             "screen_size": screen_size,
             "score": score,
@@ -1172,19 +1197,20 @@ def list_video_benchmark_items(
 
 
 def video_benchmark_stats(conn) -> list[dict]:
-    """按 (shot_type, question_type) 统计未删除题数；包含 question_type 为空的项。"""
+    """按新分类路径统计未删除题数；包含未迁移的空分类项。"""
     rows = conn.execute(
         """
-        SELECT shot_type, question_type, COUNT(*) AS c
+        SELECT category_l1, category_l2, category_l3, COUNT(*) AS c
           FROM video_benchmark_items
          WHERE deleted_at IS NULL
-         GROUP BY shot_type, question_type
+         GROUP BY category_l1, category_l2, category_l3
         """
     ).fetchall()
     return [
         {
-            "shot_type": row["shot_type"],
-            "question_type": row["question_type"],
+            "category_l1": row["category_l1"],
+            "category_l2": row["category_l2"],
+            "category_l3": row["category_l3"],
             "count": int(row["c"]),
         }
         for row in rows

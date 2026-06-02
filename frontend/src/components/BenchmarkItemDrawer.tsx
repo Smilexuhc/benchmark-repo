@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { InfoCircleOutlined } from '@ant-design/icons'
 import {
   App as AntApp,
   Button,
@@ -8,6 +9,7 @@ import {
   Input,
   Modal,
   Popconfirm,
+  Popover,
   Segmented,
   Select,
   Space,
@@ -23,7 +25,11 @@ import type {
 } from '../types'
 import { emptyVideoBenchmarkItem, FIELD_LABELS } from '../types'
 import { characterApi, imageUrl, mediaAssetsApi, sceneApi, videoBenchmarkApi } from '../api'
-import { QUESTION_TYPE_OPTIONS, findCascaderValue } from '../data/questionTypeOptions'
+import {
+  QUESTION_TYPE_OPTIONS,
+  findCascaderValue,
+  findCategoryDefinition,
+} from '../data/questionTypeOptions'
 
 const { TextArea } = Input
 
@@ -35,8 +41,7 @@ interface Props {
   onDeleted?: (id: number) => void | Promise<void>
 }
 
-// 镜头类型和题目类型合并到 Cascader 单独渲染，不走通用 BASIC_FIELDS 流程
-// task_type 在编辑页隐藏（保留数据库字段）
+// 新分类合并到 Cascader 单独渲染；旧分类字段在编辑页隐藏但继续随 payload 保留。
 const BASIC_FIELDS: (keyof VideoBenchmarkItemInput)[] = [
   'scene',
   'screen_size',
@@ -121,6 +126,23 @@ const MEDIA_FIELDS: {
 ]
 
 const DIFFICULTY_PREFIX_RE = /^【([易中难])】\s*/
+const DIFFICULTY_DEFINITIONS = [
+  {
+    value: '易',
+    title: '简单',
+    body: '单一清晰主体，常规或静态表现，没有额外扰动。模型在理想条件下本应稳定完成，是用来确认"基本功在不在"的基准线。',
+  },
+  {
+    value: '中',
+    title: '中等',
+    body: '在简单的基础上，只引入一项复杂度：要么主体变多，要么表现变剧烈，要么叠加一层扰动，但其余两项保持简单，焦点依然单一。模型需要多处理一件事。',
+  },
+  {
+    value: '难',
+    title: '困难',
+    body: '多项复杂度交叉，逼近或越过模型能力边界；或者本身就是行业已知容易崩的场景。典型失效模式包括高相似度多主体、换脸/人皮面具、受伤或剧烈状态变化、幻想生物、多主体复杂交互、叠加场景切换。',
+  },
+]
 
 function stripMatchingDifficultyPrefix(manualTag: string, difficulty: string) {
   const match = manualTag.match(DIFFICULTY_PREFIX_RE)
@@ -137,6 +159,10 @@ function pickInput(item: VideoBenchmarkItem): VideoBenchmarkItemInput {
     task_type: item.task_type,
     question_type: item.question_type,
     manual_tag: stripMatchingDifficultyPrefix(item.manual_tag ?? '', difficulty),
+    category_l1: item.category_l1,
+    category_l2: item.category_l2,
+    category_l3: item.category_l3,
+    category_definition: item.category_definition,
     difficulty,
     scene: item.scene,
     screen_size: item.screen_size,
@@ -521,16 +547,18 @@ export default function BenchmarkItemDrawer({
         style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', columnGap: 16 }}
       >
         <div style={{ gridColumn: '1 / -1' }}>
-          <Field label="镜头类型 / 题目类型">
+          <Field label="新分类">
             <Cascader
-              value={findCascaderValue(form.shot_type, form.question_type)}
+              value={findCascaderValue(form.category_l1, form.category_l2, form.category_l3)}
               onChange={(value) => {
-                const [l1 = '', , l3 = ''] = (value ?? []) as string[]
-                set('shot_type', l1)
-                set('question_type', l3)
+                const [l1 = '', l2 = '', l3 = ''] = (value ?? []) as string[]
+                set('category_l1', l1)
+                set('category_l2', l2)
+                set('category_l3', l3)
+                set('category_definition', findCategoryDefinition(l1, l2, l3))
               }}
               options={QUESTION_TYPE_OPTIONS}
-              placeholder="依次选择 镜头类型 → 能力点 → 题型"
+              placeholder="依次选择 一级分类 → 二级分类 → 三级分类"
               showSearch={{ filter: (input, path) => path.some((o) => (o.label as string).toLowerCase().includes(input.toLowerCase())) }}
               changeOnSelect={false}
               expandTrigger="hover"
@@ -540,6 +568,17 @@ export default function BenchmarkItemDrawer({
             />
           </Field>
         </div>
+        {form.category_definition ? (
+          <div style={{ gridColumn: '1 / -1' }}>
+            <Field label={FIELD_LABELS.category_definition}>
+              <Input.TextArea
+                value={form.category_definition}
+                autoSize={{ minRows: 2, maxRows: 4 }}
+                readOnly
+              />
+            </Field>
+          </div>
+        ) : null}
         <div style={{ gridColumn: '1 / -1' }}>
           <Field label={FIELD_LABELS.manual_tag}>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -555,6 +594,55 @@ export default function BenchmarkItemDrawer({
                 ]}
                 style={{ width: 82, flexShrink: 0 }}
               />
+              <Popover
+                trigger="click"
+                placement="bottomLeft"
+                content={
+                  <div style={{ width: 420, display: 'grid', gap: 10 }}>
+                    {DIFFICULTY_DEFINITIONS.map((item) => {
+                      const active = form.difficulty === item.value
+                      return (
+                        <div
+                          key={item.value}
+                          style={{
+                            borderLeft: `3px solid ${active ? '#1677ff' : '#e8e8e8'}`,
+                            paddingLeft: 10,
+                          }}
+                        >
+                          <div style={{ fontWeight: 600, color: active ? '#1677ff' : '#1f2328' }}>
+                            {item.value} · {item.title}
+                          </div>
+                          <div style={{ marginTop: 4, fontSize: 13, lineHeight: '20px', color: '#5a6068' }}>
+                            {item.body}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                }
+              >
+                <button
+                  type="button"
+                  aria-label="查看难度定义"
+                  title="查看难度定义"
+                  style={{
+                    flexShrink: 0,
+                    width: 18,
+                    height: 18,
+                    padding: 0,
+                    border: 0,
+                    background: 'transparent',
+                    color: '#8c96a3',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: 15,
+                  }}
+                >
+                  <InfoCircleOutlined />
+                </button>
+              </Popover>
               <Input
                 value={form.manual_tag}
                 onChange={(e) => set('manual_tag', e.target.value)}
@@ -596,7 +684,11 @@ export default function BenchmarkItemDrawer({
             value={form[key] as string}
             onChange={(e) => set(key, e.target.value)}
             autoSize={{ minRows: 4, maxRows: 8 }}
-            placeholder={`输入${FIELD_LABELS[key]}，可填写 URL、object key、文件名或备注`}
+            placeholder={
+              key === 'text_prompt' && form.category_definition.trim()
+                ? form.category_definition
+                : `输入${FIELD_LABELS[key]}，可填写 URL、object key、文件名或备注`
+            }
           />
         </Field>
       ))}
