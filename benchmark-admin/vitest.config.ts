@@ -18,6 +18,13 @@ export default defineConfig({
           environment: 'node',
         },
       },
+      {
+        test: {
+          name: 'migrate',
+          include: ['tools/migrate-from-legacy/src/**/*.test.ts'],
+          environment: 'node',
+        },
+      },
     ],
   },
 });
