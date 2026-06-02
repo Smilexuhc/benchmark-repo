@@ -1,138 +1,227 @@
-import { useEffect, useState } from 'react';
-import { Badge } from '@/components/ui/badge';
+import { useMemo, useState } from 'react';
+import { confirm } from '@/components/feedback/confirm';
+import { toast } from '@/components/feedback/toast';
 import { Button } from '@/components/ui/button';
-import { Drawer } from '@/components/ui/drawer';
 import { trpc } from '@/lib/trpc';
-import { useBatchRegenerateStore } from '@/stores/batch-regenerate';
+import { cn } from '@/lib/utils';
+import type { AssetCardData } from './AssetCard';
+import { type BatchJob, useBatchRunner } from './useBatchRunner';
+import type { AssetKind } from './useFilters';
 
 export type BatchToolbarProps = {
-  // Ids selected in the AssetLibrary multi-select. The batch run consumes these
-  // directly instead of a hand-typed comma-separated list.
+  kind: AssetKind;
+  items: AssetCardData[];
+  selectMode: boolean;
+  onEnterSelectMode: () => void;
+  onExitSelectMode: () => void;
   selectedIds: number[];
+  onSelectedIdsChange: (ids: number[]) => void;
+  // Export-bundle action — when present, the "导出资产包" button is enabled and
+  // clicking it navigates to `exportHref`. Disabled when null/undefined.
+  exportHref?: string | undefined;
+  // "新建" action — when present, the toolbar renders the create button.
+  onNewClick?: (() => void) | undefined;
+  newLabel?: string | undefined;
 };
 
-export function BatchToolbar({ selectedIds }: BatchToolbarProps) {
-  const [open, setOpen] = useState(false);
-  const status = useBatchRegenerateStore((s) => s.status);
-  const results = useBatchRegenerateStore((s) => s.results);
-  const pending = useBatchRegenerateStore((s) => s.pending);
-  const errorMessage = useBatchRegenerateStore((s) => s.errorMessage);
-  const start = useBatchRegenerateStore((s) => s.start);
-  const retryFailed = useBatchRegenerateStore((s) => s.retryFailed);
-  const reset = useBatchRegenerateStore((s) => s.reset);
-  const cancel = useBatchRegenerateStore((s) => s.cancel);
+function getPrompt(asset: AssetCardData | undefined): string {
+  const p = asset?.data?.prompt;
+  return typeof p === 'string' ? p.trim() : '';
+}
 
-  // Cancel any in-flight subscription when the consuming component unmounts
-  // (route change, page navigation). Without this the SSE stream and its
-  // writes to shared store state would outlive the UI that started it.
-  useEffect(() => () => cancel(), [cancel]);
+function estimateMinutes(count: number): number {
+  // ~30s per item; floor to 1 minute so the body is never "0 分钟".
+  return Math.max(1, Math.ceil(count * 0.5));
+}
 
-  const totals = Object.values(results);
-  const done = totals.filter((r) => r.status === 'done').length;
-  const failed = totals.filter((r) => r.status === 'failed').length;
+export function BatchToolbar({
+  kind,
+  items,
+  selectMode,
+  onEnterSelectMode,
+  onExitSelectMode,
+  selectedIds,
+  onSelectedIdsChange,
+  exportHref,
+  onNewClick,
+  newLabel = '新建',
+}: BatchToolbarProps) {
+  const generateImage = trpc.ai.generateImage.useMutation();
+  const runner = useBatchRunner();
+  const [confirming, setConfirming] = useState(false);
 
-  const exportUrl = trpc.exports.getDownloadUrl.useQuery({ kind: 'benchmark' });
+  // Map of id → item for fast lookup when assembling jobs / labels.
+  const itemById = useMemo(() => {
+    const map = new Map<number, AssetCardData>();
+    for (const item of items) map.set(item.id, item);
+    return map;
+  }, [items]);
+
+  const selectedInView = selectedIds.filter((id) => itemById.has(id));
+  const totalInView = items.length;
+
+  function selectAllInView() {
+    const ids = items.map((i) => i.id);
+    // Preserve any selections from previous pages that are no longer visible.
+    const offView = selectedIds.filter((id) => !itemById.has(id));
+    onSelectedIdsChange([...offView, ...ids]);
+  }
+
+  function clearSelection() {
+    onSelectedIdsChange([]);
+  }
+
+  function exitBatchMode() {
+    runner.reset();
+    onSelectedIdsChange([]);
+    onExitSelectMode();
+  }
+
+  async function handleStart() {
+    const jobsAll: BatchJob[] = selectedIds.map((id) => {
+      const item = itemById.get(id);
+      return { id, name: item?.name ?? `#${id}` };
+    });
+    const jobs = jobsAll.filter((j) => getPrompt(itemById.get(j.id)) !== '');
+    if (jobs.length === 0) {
+      toast.warning('选中的项都没有提示词');
+      return;
+    }
+
+    setConfirming(true);
+    const ok = await confirm({
+      title: `批量重新生成 ${jobs.length} 项？`,
+      body: `共约 ${estimateMinutes(jobs.length)} 分钟，过程中可随时停止。`,
+      confirmText: '开始',
+    });
+    setConfirming(false);
+    if (!ok) return;
+
+    const outcome = await runner.start(jobs, async (job) => {
+      const prompt = getPrompt(itemById.get(job.id));
+      await generateImage.mutateAsync({ kind, id: job.id, prompt });
+    });
+
+    if (outcome.kind === 'completed') {
+      toast.success(`批量生成完成：${outcome.done} 个`);
+      exitBatchMode();
+    } else if (outcome.kind === 'stopped') {
+      toast.info(`已停止，完成 ${outcome.done} 个`);
+    } else {
+      toast.error(`「${outcome.job.name}」失败：${outcome.error}`);
+    }
+  }
+
+  // ── Outside select mode: standard library header buttons ───────────────────
+  if (!selectMode) {
+    return (
+      <div className="flex items-center gap-2">
+        {exportHref !== undefined ? (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              window.location.href = exportHref;
+            }}
+          >
+            导出资产包
+          </Button>
+        ) : (
+          <Button size="sm" variant="outline" disabled>
+            导出资产包
+          </Button>
+        )}
+        <Button size="sm" variant="outline" onClick={onEnterSelectMode}>
+          批量生成
+        </Button>
+        {onNewClick ? (
+          <Button size="sm" onClick={onNewClick}>
+            {newLabel}
+          </Button>
+        ) : null}
+      </div>
+    );
+  }
+
+  // ── Inside select mode: blue operation bar ─────────────────────────────────
+  const { state, progress } = runner;
+  const running = state === 'running' || state === 'stopping';
 
   return (
-    <>
-      <div className="flex items-center gap-2">
-        <Button size="sm" variant="outline" onClick={() => setOpen(true)}>
-          批量重生成
-        </Button>
-      </div>
-
-      {open ? (
-        <Drawer
-          open
-          onClose={() => setOpen(false)}
-          title="批量重生成图像"
-          widthClassName="w-[480px] max-w-full"
-        >
-          <div className="space-y-4">
-            <p className="text-sm text-[hsl(var(--muted-foreground))]">
-              已选中 <span className="font-medium text-[hsl(var(--foreground))]">{selectedIds.length}</span> 个资源
-              {selectedIds.length === 0 ? '（在列表中点选资源后再开始）' : ''}
-            </p>
-            <div className="flex gap-2">
-              <Button
-                size="sm"
-                disabled={status === 'running' || selectedIds.length === 0}
-                onClick={() => {
-                  reset();
-                  void start(selectedIds);
-                }}
-              >
-                开始
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={status === 'running' || failed === 0}
-                onClick={() => void retryFailed()}
-              >
-                重试失败 ({failed})
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={status !== 'running'}
-                onClick={cancel}
-              >
-                取消
-              </Button>
-              <Button size="sm" variant="ghost" onClick={reset} disabled={status === 'running'}>
-                清空
-              </Button>
-            </div>
-
-            {totals.length > 0 ? (
-              <div className="space-y-1 text-sm">
-                <div className="flex items-center gap-2">
-                  <Badge>{done} 完成</Badge>
-                  <Badge variant="outline">{pending.length} 进行中</Badge>
-                  <Badge variant="destructive">{failed} 失败</Badge>
-                </div>
-                <ul className="max-h-64 space-y-1 overflow-y-auto rounded border border-[hsl(var(--border))] p-2 text-xs">
-                  {Object.entries(results).map(([id, r]) => (
-                    <li key={id} className="flex items-center justify-between gap-2">
-                      <span>#{id}</span>
-                      {r.status === 'pending' ? (
-                        <Badge variant="outline">进行中</Badge>
-                      ) : r.status === 'done' ? (
-                        <Badge>完成</Badge>
-                      ) : (
-                        <Badge variant="destructive" title={r.error}>失败</Badge>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-
-            {errorMessage ? (
-              <p role="alert" className="text-xs text-[hsl(var(--destructive))]">
-                {errorMessage}
-              </p>
-            ) : null}
-
-            <div className="border-t border-[hsl(var(--border))] pt-3">
-              <p className="mb-2 text-xs text-[hsl(var(--muted-foreground))]">
-                导出 ZIP（包含所有未删除评测项及其图像）
-              </p>
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={!exportUrl.data}
-                onClick={() => {
-                  if (exportUrl.data) window.location.href = exportUrl.data.url;
-                }}
-              >
-                导出 ZIP
-              </Button>
-            </div>
+    <div
+      className={cn(
+        'flex w-full items-center gap-3 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm',
+      )}
+      role="region"
+      aria-label="批量生成"
+    >
+      {running ? (
+        <>
+          <span className="font-medium text-[hsl(var(--foreground))]">批量重新生成</span>
+          <span aria-live="polite">
+            {progress.done}/{progress.total}
+          </span>
+          <div
+            className="relative h-2 flex-1 overflow-hidden rounded-full bg-blue-100"
+            role="progressbar"
+            aria-valuemin={0}
+            aria-valuemax={progress.total}
+            aria-valuenow={progress.done}
+            aria-label="批量生成进度"
+          >
+            <div
+              className="absolute inset-y-0 left-0 bg-blue-500 transition-[width]"
+              style={{
+                width:
+                  progress.total === 0
+                    ? '0%'
+                    : `${Math.round((progress.done / progress.total) * 100)}%`,
+              }}
+            />
           </div>
-        </Drawer>
-      ) : null}
-    </>
+          {progress.current ? (
+            <span className="truncate text-[hsl(var(--muted-foreground))]">
+              当前: {progress.current.name}
+            </span>
+          ) : null}
+          <Button
+            size="sm"
+            variant="destructive"
+            onClick={runner.stop}
+            disabled={state === 'stopping'}
+          >
+            {state === 'stopping' ? '停止中…' : '停止'}
+          </Button>
+        </>
+      ) : (
+        <>
+          <span className="font-medium text-[hsl(var(--foreground))]">
+            已选 {selectedInView.length}/{totalInView}
+          </span>
+          <Button size="sm" variant="outline" onClick={selectAllInView}>
+            全选当前
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={clearSelection}
+            disabled={selectedIds.length === 0}
+          >
+            清空
+          </Button>
+          <div className="flex-1" />
+          <Button
+            size="sm"
+            onClick={handleStart}
+            disabled={selectedIds.length === 0 || confirming}
+          >
+            开始重新生成
+          </Button>
+          <Button size="sm" variant="outline" onClick={exitBatchMode}>
+            退出
+          </Button>
+        </>
+      )}
+    </div>
   );
 }
