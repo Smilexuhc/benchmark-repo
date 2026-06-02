@@ -1,10 +1,21 @@
 import { Link, Outlet, createRootRoute, useLocation, useNavigate } from '@tanstack/react-router';
 import { useEffect } from 'react';
+import { ConfirmHost, Toaster } from '@/components/feedback';
 import { Nav } from '@/components/nav';
 import { Button } from '@/components/ui/button';
 import { useAuthActions, useSession } from '@/lib/auth-client';
 
 function RootLayout() {
+  return (
+    <>
+      <RootContent />
+      <Toaster />
+      <ConfirmHost />
+    </>
+  );
+}
+
+function RootContent() {
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const session = useSession();
