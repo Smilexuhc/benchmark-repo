@@ -1,82 +1,51 @@
-import { useState } from 'react';
-import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
+import { cn } from '@/lib/utils';
 
-export type AiToolbarProps = {
-  hasAsset: boolean;
-  busy?: { prompt?: boolean; extract?: boolean; image?: boolean } | null;
-  error?: string | null;
-  onGeneratePrompt: () => void | Promise<void>;
-  onExtractFields: (description: string) => void | Promise<void>;
-  onGenerateImage: () => void | Promise<void>;
+export type AiLinkProps = {
+  children: React.ReactNode;
+  busy?: boolean;
+  disabled?: boolean;
+  busyLabel?: React.ReactNode;
+  onClick: () => void | Promise<void>;
+  title?: string;
+  className?: string;
+  ariaLabel?: string;
 };
 
-export function AiToolbar({
-  hasAsset,
+/**
+ * Inline text-link button used in section/field headers — `AI 填入字段`,
+ * `AI 生成`, `复制`. Visually a link, semantically a button. Lives next to
+ * the section label rather than as a bottom toolbar so each action is
+ * anchored to the field it acts on.
+ *
+ * `ariaLabel` defaults to the rendered children when they are a string so
+ * the button has a stable accessible name even when nested under a <label>
+ * (where dom-accessibility-api otherwise rolls the label text into the
+ * button's accessible name).
+ */
+export function AiLink({
+  children,
   busy,
-  error,
-  onGeneratePrompt,
-  onExtractFields,
-  onGenerateImage,
-}: AiToolbarProps) {
-  const [draft, setDraft] = useState('');
-  const promptBusy = busy?.prompt ?? false;
-  const extractBusy = busy?.extract ?? false;
-  const imageBusy = busy?.image ?? false;
-
+  disabled,
+  busyLabel,
+  onClick,
+  title,
+  className,
+  ariaLabel,
+}: AiLinkProps) {
+  const accessibleLabel = ariaLabel ?? (typeof children === 'string' ? children : undefined);
   return (
-    <section
-      aria-label="AI 工具"
-      className="space-y-3 rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--muted))] p-3"
+    <button
+      type="button"
+      onClick={() => onClick()}
+      disabled={disabled || busy}
+      title={title}
+      aria-label={accessibleLabel}
+      className={cn(
+        'text-xs font-medium text-[hsl(var(--primary))] underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:opacity-50 disabled:no-underline',
+        className,
+      )}
     >
-      <div className="flex flex-wrap items-center gap-2">
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          disabled={promptBusy}
-          onClick={() => onGeneratePrompt()}
-        >
-          {promptBusy ? '生成中…' : '生成提示词'}
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          disabled={imageBusy || !hasAsset}
-          onClick={() => onGenerateImage()}
-          title={hasAsset ? undefined : '需要先保存以生成图像'}
-        >
-          {imageBusy ? '生成中…' : '生成图像'}
-        </Button>
-      </div>
-
-      <div className="space-y-1.5">
-        <label htmlFor="ai-extract-input" className="text-xs font-medium">
-          从描述提取字段
-        </label>
-        <Textarea
-          id="ai-extract-input"
-          placeholder="粘贴一段自由文本描述…"
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-        />
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          disabled={extractBusy || !draft.trim()}
-          onClick={() => onExtractFields(draft)}
-        >
-          {extractBusy ? '解析中…' : '提取字段'}
-        </Button>
-      </div>
-
-      {error ? (
-        <p role="alert" className="text-xs text-[hsl(var(--destructive))]">
-          {error}
-        </p>
-      ) : null}
-    </section>
+      {busy ? (busyLabel ?? '处理中…') : children}
+    </button>
   );
 }

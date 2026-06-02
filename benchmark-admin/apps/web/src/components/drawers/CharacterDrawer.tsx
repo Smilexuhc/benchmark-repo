@@ -1,24 +1,28 @@
-import { zodResolver } from '@hookform/resolvers/zod';
-import { useEffect } from 'react';
-import { type SubmitHandler, useForm } from 'react-hook-form';
-import { z } from 'zod';
+import { confirm } from '@/components/feedback/confirm';
+import { toast } from '@/components/feedback/toast';
+import { AutoComplete } from '@/components/ui/autocomplete';
 import { Button } from '@/components/ui/button';
-import { Drawer } from '@/components/ui/drawer';
+import { Drawer, DrawerFooter } from '@/components/ui/drawer';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { AiToolbar } from './shared/AiToolbar';
+import { trpc } from '@/lib/trpc';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { useEffect, useRef } from 'react';
+import { type SubmitHandler, useForm } from 'react-hook-form';
+import { z } from 'zod';
+import { AiLink } from './shared/AiToolbar';
 import { Field } from './shared/Field';
 import { ImageGrid } from './shared/ImageGrid';
 import { useAssetDrawer } from './shared/useAssetDrawer';
 
 const CharacterFormSchema = z.object({
-  name: z.string().min(1, '必填'),
+  name: z.string().optional(),
   era: z.string().optional(),
   genre: z.string().optional(),
   type: z.string().optional(),
   gender: z.string().optional(),
   age: z.string().optional(),
-  persona: z.string().optional(),
+  persona: z.string().min(1, '必填'),
   body: z.string().optional(),
   features: z.string().optional(),
   prompt: z.string().optional(),
@@ -47,9 +51,16 @@ export function CharacterDrawer({
 }: {
   id: number;
   onClose: () => void;
-  onCreated: () => void;
+  onCreated: (newId: number) => void;
 }) {
   const ctx = useAssetDrawer('character', id);
+  const optionsQuery = trpc.assets.options.useQuery({ kind: 'character', deletedOnly: false });
+  const deleteAsset = trpc.assets.delete.useMutation();
+  const restoreAsset = trpc.assets.restore.useMutation();
+  const attachImage = trpc.assets.attachImage.useMutation();
+  const getUploadUrl = trpc.mediaAssets.getUploadUrl.useMutation();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const form = useForm<CharacterFormValues>({
     resolver: zodResolver(CharacterFormSchema),
     defaultValues: EMPTY,
@@ -81,7 +92,9 @@ export function CharacterDrawer({
   }, [ctx.asset, form]);
 
   const buildPayload = (values: CharacterFormValues) => ({
-    name: values.name,
+    // `name` falls back to `persona` so the DB NOT NULL column always has a
+    // value while the UI surfaces persona as the required identity field.
+    name: values.name?.trim() || values.persona.trim(),
     era: values.era || null,
     genre: values.genre || null,
     data: {
@@ -99,12 +112,15 @@ export function CharacterDrawer({
   const onSubmit: SubmitHandler<CharacterFormValues> = async (values) => {
     const payload = buildPayload(values);
     if (ctx.isNew) {
-      await ctx.create.mutateAsync({ kind: 'character', ...payload });
+      const created = await ctx.create.mutateAsync({ kind: 'character', ...payload });
       await ctx.refresh();
-      onCreated();
+      toast.success('角色已创建');
+      // Switch the drawer into edit mode for the new asset; do not close.
+      onCreated(created.id);
     } else {
       await ctx.update.mutateAsync({ kind: 'character', id, ...payload });
       await ctx.refresh();
+      toast.success('已保存');
     }
   };
 
@@ -120,21 +136,34 @@ export function CharacterDrawer({
     }
   }
 
-  async function handleExtract(text: string) {
+  async function handleExtract() {
     ctx.setAiError(null);
+    const text = (form.getValues('description') ?? '').trim();
+    if (!text) {
+      ctx.setAiError('请先填写描述');
+      return;
+    }
     try {
-      const result = await ctx.extractFields.mutateAsync({ kind: 'character', description: text });
+      const result = await ctx.extractFields.mutateAsync({
+        kind: 'character',
+        description: text,
+      });
       if (result.kind === 'character') {
         const d = result.data;
         const current = form.getValues();
-        form.reset(
-          { ...current, ...mapCharacter(d, current) },
-          { keepDirty: true },
-        );
+        form.reset({ ...current, ...mapCharacter(d, current) }, { keepDirty: true });
+        toast.success('已填入字段');
       }
     } catch (e) {
       ctx.setAiError(e instanceof Error ? e.message : '提取失败');
     }
+  }
+
+  async function handleCopyPrompt() {
+    const prompt = form.getValues('prompt');
+    if (!prompt) return;
+    await navigator.clipboard.writeText(prompt);
+    toast.success('已复制');
   }
 
   async function handleGenerateImage() {
@@ -156,63 +185,204 @@ export function CharacterDrawer({
     }
   }
 
+  async function handleUploadClick() {
+    if (ctx.isNew) {
+      ctx.setAiError('请先保存角色再上传图像');
+      return;
+    }
+    fileInputRef.current?.click();
+  }
+
+  async function handleFileChosen(file: File) {
+    ctx.setAiError(null);
+    try {
+      const { uploadUrl, objectKey } = await getUploadUrl.mutateAsync({
+        mediaType: 'image',
+        filename: file.name,
+        contentType: file.type || 'application/octet-stream',
+      });
+      const putRes = await fetch(uploadUrl, {
+        method: 'PUT',
+        body: file,
+        headers: { 'Content-Type': file.type || 'application/octet-stream' },
+      });
+      if (!putRes.ok) throw new Error(`上传失败：${putRes.status}`);
+      await attachImage.mutateAsync({ id, objectKey, source: 'uploaded' });
+      await ctx.refresh();
+      toast.success('已上传');
+    } catch (e) {
+      ctx.setAiError(e instanceof Error ? e.message : '上传失败');
+    }
+  }
+
+  async function handleDelete() {
+    if (ctx.isNew) return;
+    const ok = await confirm({
+      title: '删除该角色？',
+      body: '删除后可在“已删除”视图恢复。',
+      danger: true,
+      confirmText: '删除',
+    });
+    if (!ok) return;
+    await deleteAsset.mutateAsync({ id });
+    await ctx.refresh();
+    toast.success('已删除');
+    onClose();
+  }
+
+  async function handleRestore() {
+    if (ctx.isNew) return;
+    await restoreAsset.mutateAsync({ id });
+    await ctx.refresh();
+    toast.success('已恢复');
+  }
+
   const images = ctx.asset && 'images' in ctx.asset ? ctx.asset.images : [];
+  const isDeleted = ctx.asset?.deletedAt != null;
+  const options = optionsQuery.data?.kind === 'character' ? optionsQuery.data : undefined;
 
   return (
-    <Drawer open onClose={onClose} title={ctx.isNew ? '新建角色' : '编辑角色'} widthClassName="w-[640px] max-w-full">
-      <form className="space-y-4" onSubmit={form.handleSubmit(onSubmit)} noValidate>
-        <Field label="名称" error={form.formState.errors.name?.message} required>
-          <Input {...form.register('name')} />
+    <Drawer open onClose={onClose} title={ctx.isNew ? '新建角色' : '编辑角色'}>
+      <form className="space-y-6" onSubmit={form.handleSubmit(onSubmit)} noValidate>
+        {/* Section 1 — free description + AI extract */}
+        <Field
+          label="描述"
+          trailing={
+            <AiLink busy={ctx.extractFields.isPending} busyLabel="解析中…" onClick={handleExtract}>
+              AI 填入字段
+            </AiLink>
+          }
+        >
+          <Textarea
+            rows={4}
+            placeholder="粘贴一段自由文本描述…"
+            {...form.register('description')}
+          />
         </Field>
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="时代">
-            <Input {...form.register('era')} />
+
+        {/* Section 2 — structured fields */}
+        <section className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="时代">
+              <AutoComplete
+                value={form.watch('era') ?? ''}
+                onChange={(v) => form.setValue('era', v, { shouldDirty: true })}
+                options={options?.era ?? []}
+                aria-label="时代"
+              />
+            </Field>
+            <Field label="题材">
+              <AutoComplete
+                value={form.watch('genre') ?? ''}
+                onChange={(v) => form.setValue('genre', v, { shouldDirty: true })}
+                options={options?.genre ?? []}
+                aria-label="题材"
+              />
+            </Field>
+            <Field label="类型">
+              <AutoComplete
+                value={form.watch('type') ?? ''}
+                onChange={(v) => form.setValue('type', v, { shouldDirty: true })}
+                options={options?.type ?? []}
+                aria-label="类型"
+              />
+            </Field>
+            <Field label="性别">
+              <AutoComplete
+                value={form.watch('gender') ?? ''}
+                onChange={(v) => form.setValue('gender', v, { shouldDirty: true })}
+                options={options?.gender ?? []}
+                aria-label="性别"
+              />
+            </Field>
+            <Field label="年龄">
+              <AutoComplete
+                value={form.watch('age') ?? ''}
+                onChange={(v) => form.setValue('age', v, { shouldDirty: true })}
+                options={options?.age ?? []}
+                aria-label="年龄"
+              />
+            </Field>
+          </div>
+
+          <Field label="人设" required error={form.formState.errors.persona?.message}>
+            <Textarea rows={2} {...form.register('persona')} />
           </Field>
-          <Field label="题材">
-            <Input {...form.register('genre')} />
+          <Field label="名称">
+            <Input {...form.register('name')} placeholder="留空则使用人设作为名称" />
           </Field>
-          <Field label="类型">
-            <Input {...form.register('type')} />
+          <Field label="体型">
+            <Input {...form.register('body')} />
           </Field>
-          <Field label="性别">
-            <Input {...form.register('gender')} />
+          <Field label="特征">
+            <Textarea rows={2} {...form.register('features')} />
           </Field>
-          <Field label="年龄">
-            <Input {...form.register('age')} />
-          </Field>
-        </div>
-        <Field label="人设">
-          <Textarea rows={2} {...form.register('persona')} />
-        </Field>
-        <Field label="体型">
-          <Input {...form.register('body')} />
-        </Field>
-        <Field label="特征">
-          <Textarea rows={2} {...form.register('features')} />
-        </Field>
-        <Field label="描述">
-          <Textarea rows={3} {...form.register('description')} />
-        </Field>
-        <Field label="提示词">
+        </section>
+
+        {/* Section 3 — prompt + AI generate / copy */}
+        <Field
+          label="提示词"
+          trailing={
+            <span className="flex items-center gap-3">
+              <AiLink
+                busy={ctx.generatePrompt.isPending}
+                busyLabel="生成中…"
+                onClick={handleGeneratePrompt}
+              >
+                AI 生成
+              </AiLink>
+              <AiLink onClick={handleCopyPrompt} disabled={!form.watch('prompt')}>
+                复制
+              </AiLink>
+            </span>
+          }
+        >
           <Textarea rows={3} {...form.register('prompt')} />
         </Field>
 
-        <AiToolbar
-          hasAsset={!ctx.isNew}
-          busy={{
-            prompt: ctx.generatePrompt.isPending,
-            extract: ctx.extractFields.isPending,
-            image: ctx.generateImage.isPending,
-          }}
-          error={ctx.aiError}
-          onGeneratePrompt={handleGeneratePrompt}
-          onExtractFields={handleExtract}
-          onGenerateImage={handleGenerateImage}
-        />
+        {ctx.aiError ? (
+          <p role="alert" className="text-xs text-[hsl(var(--destructive))]">
+            {ctx.aiError}
+          </p>
+        ) : null}
 
+        {/* Section 4 — image grid */}
         {!ctx.isNew ? (
           <section aria-label="图像" className="space-y-2">
-            <h3 className="text-sm font-medium">图像</h3>
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-medium">图像</h3>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={ctx.generateImage.isPending}
+                  onClick={handleGenerateImage}
+                >
+                  {ctx.generateImage.isPending ? '生成中…' : '生成图片'}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={getUploadUrl.isPending || attachImage.isPending}
+                  onClick={handleUploadClick}
+                >
+                  {getUploadUrl.isPending || attachImage.isPending ? '上传中…' : '上传图片'}
+                </Button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) handleFileChosen(file);
+                    e.target.value = '';
+                  }}
+                />
+              </div>
+            </div>
             <ImageGrid
               images={images}
               coverImageId={ctx.asset?.coverImageId ?? null}
@@ -224,20 +394,51 @@ export function CharacterDrawer({
                 await ctx.deleteImage.mutateAsync({ imageId });
                 await ctx.refresh();
               }}
-              setCoverBusyId={ctx.setCover.isPending ? ctx.setCover.variables?.imageId ?? null : null}
-              deleteBusyId={ctx.deleteImage.isPending ? ctx.deleteImage.variables?.imageId ?? null : null}
+              setCoverBusyId={
+                ctx.setCover.isPending ? (ctx.setCover.variables?.imageId ?? null) : null
+              }
+              deleteBusyId={
+                ctx.deleteImage.isPending ? (ctx.deleteImage.variables?.imageId ?? null) : null
+              }
             />
           </section>
         ) : null}
 
-        <footer className="flex items-center justify-end gap-2 border-t border-[hsl(var(--border))] pt-3">
-          <Button type="button" variant="outline" onClick={onClose}>
-            取消
-          </Button>
-          <Button type="submit" disabled={form.formState.isSubmitting}>
-            {form.formState.isSubmitting ? '保存中…' : '保存'}
-          </Button>
-        </footer>
+        <DrawerFooter
+          left={
+            !ctx.isNew ? (
+              isDeleted ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={restoreAsset.isPending}
+                  onClick={handleRestore}
+                >
+                  恢复
+                </Button>
+              ) : (
+                <Button
+                  type="button"
+                  variant="destructive"
+                  disabled={deleteAsset.isPending}
+                  onClick={handleDelete}
+                >
+                  删除
+                </Button>
+              )
+            ) : null
+          }
+          right={
+            <>
+              <Button type="button" variant="outline" onClick={onClose}>
+                关闭
+              </Button>
+              <Button type="submit" disabled={form.formState.isSubmitting}>
+                {form.formState.isSubmitting ? '保存中…' : ctx.isNew ? '创建' : '保存'}
+              </Button>
+            </>
+          }
+        />
       </form>
     </Drawer>
   );

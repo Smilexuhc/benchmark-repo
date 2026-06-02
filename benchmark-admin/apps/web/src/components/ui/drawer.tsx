@@ -1,5 +1,5 @@
-import { useEffect } from 'react';
 import { cn } from '@/lib/utils';
+import { useEffect } from 'react';
 
 type DrawerProps = {
   open: boolean;
@@ -16,7 +16,7 @@ export function Drawer({
   title,
   children,
   side = 'right',
-  widthClassName = 'w-[480px] max-w-full',
+  widthClassName = 'w-[760px] max-w-full',
 }: DrawerProps) {
   useEffect(() => {
     if (!open) return;
@@ -65,5 +65,23 @@ export function Drawer({
         <div className="px-6 py-4">{children}</div>
       </div>
     </div>
+  );
+}
+
+export type DrawerFooterProps = {
+  left?: React.ReactNode;
+  right?: React.ReactNode;
+};
+
+/**
+ * Sticky split-slot footer for drawer forms. Left side hosts destructive
+ * actions (delete / restore); right side hosts close + primary save.
+ */
+export function DrawerFooter({ left, right }: DrawerFooterProps) {
+  return (
+    <footer className="-mx-6 mt-4 flex items-center justify-between gap-2 border-t border-[hsl(var(--border))] bg-[hsl(var(--background))] px-6 pt-3">
+      <div className="flex items-center gap-2">{left}</div>
+      <div className="flex items-center gap-2">{right}</div>
+    </footer>
   );
 }
