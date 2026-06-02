@@ -4,9 +4,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --build && vite build",
+    "build": "pnpm --filter @benchmark-admin/shared build && tsc --build && vite build",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "pnpm --filter @benchmark-admin/shared build && vitest run"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",

@@ -19,7 +19,7 @@ export const CharacterDataSchema = z.object({
 export const SceneDataSchema = z.object({
   scene_type: z.string().optional(),
   mood: z.string().optional(),
-  elements: z.array(z.string()).optional(),
+  elements: z.string().optional(),
   prompt: z.string().optional(),
   description: z.string().optional(),
 });

@@ -1,5 +1,5 @@
 import { TRPCError } from '@trpc/server';
-import { type SQL, and, desc, eq, inArray, isNotNull, isNull, lt, sql } from 'drizzle-orm';
+import { type SQL, and, asc, eq, gt, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { assets, media } from '@benchmark-admin/shared/db/schema';
 import { AssetInsert, AssetUpdate } from '@benchmark-admin/shared/schemas/assets';
@@ -57,6 +57,20 @@ async function fetchPageWithCoverImage(ids: number[]) {
           .orderBy(media.id)
       : [];
 
+  const imageCounts =
+    assetRows.length > 0
+      ? await db
+          .select({ assetId: media.assetId, count: sql<number>`count(*)::int` })
+          .from(media)
+          .where(and(inArray(media.assetId, ids), isNull(media.deletedAt)))
+          .groupBy(media.assetId)
+      : [];
+  const imageCountByAssetId = new Map(
+    imageCounts
+      .filter((row): row is { assetId: number; count: number } => row.assetId !== null)
+      .map((row) => [row.assetId, row.count]),
+  );
+
   const coverPointerByAssetId = new Map<number, number>();
   for (const a of assetRows) {
     if (a.coverImageId !== null && a.coverImageId !== undefined) {
@@ -103,6 +117,7 @@ async function fetchPageWithCoverImage(ids: number[]) {
       return {
         ...asset,
         images: cover ? [cover] : [],
+        imageCount: imageCountByAssetId.get(id) ?? 0,
         coverImageId: asset.coverImageId ?? null,
       };
     })
@@ -137,50 +152,58 @@ export const assetsRouter = t.router({
     )
     .query(async ({ input }) => {
       const LIMIT = 20;
-      const conditions: SQL[] = [eq(assets.kind, input.kind)];
+      const baseConditions: SQL[] = [eq(assets.kind, input.kind)];
 
       if (input.deletedOnly) {
-        conditions.push(isNotNull(assets.deletedAt));
+        baseConditions.push(isNotNull(assets.deletedAt));
       } else {
-        conditions.push(isNull(assets.deletedAt));
-      }
-
-      if (input.cursor) {
-        conditions.push(lt(assets.id, input.cursor));
+        baseConditions.push(isNull(assets.deletedAt));
       }
 
       if (input.search?.trim()) {
         const term = `%${input.search.trim()}%`;
-        conditions.push(
+        baseConditions.push(
           sql`(${assets.name} ILIKE ${term} OR cast(${assets.data} as text) ILIKE ${term})`,
         );
       }
 
       const { filters } = input;
       if (filters) {
-        if (filters.era?.length) conditions.push(inArray(assets.era, filters.era));
-        if (filters.genre?.length) conditions.push(inArray(assets.genre, filters.genre));
+        if (filters.era?.length) baseConditions.push(inArray(assets.era, filters.era));
+        if (filters.genre?.length) baseConditions.push(inArray(assets.genre, filters.genre));
         if (filters.type?.length)
-          conditions.push(inArray(sql<string>`(${assets.data}->>'type')`, filters.type));
+          baseConditions.push(inArray(sql<string>`(${assets.data}->>'type')`, filters.type));
         if (filters.gender?.length)
-          conditions.push(inArray(sql<string>`(${assets.data}->>'gender')`, filters.gender));
+          baseConditions.push(inArray(sql<string>`(${assets.data}->>'gender')`, filters.gender));
         if (filters.age?.length)
-          conditions.push(inArray(sql<string>`(${assets.data}->>'age')`, filters.age));
+          baseConditions.push(inArray(sql<string>`(${assets.data}->>'age')`, filters.age));
         if (filters.scene_type?.length)
-          conditions.push(
+          baseConditions.push(
             inArray(sql<string>`(${assets.data}->>'scene_type')`, filters.scene_type),
           );
         if (filters.mood?.length)
-          conditions.push(inArray(sql<string>`(${assets.data}->>'mood')`, filters.mood));
+          baseConditions.push(inArray(sql<string>`(${assets.data}->>'mood')`, filters.mood));
         if (filters.category?.length)
-          conditions.push(inArray(sql<string>`(${assets.data}->>'category')`, filters.category));
+          baseConditions.push(inArray(sql<string>`(${assets.data}->>'category')`, filters.category));
+      }
+
+      const baseWhere = and(...baseConditions);
+      const totalRow = await db
+        .select({ total: sql<number>`count(*)::int` })
+        .from(assets)
+        .where(baseWhere);
+      const total = totalRow[0]?.total ?? 0;
+
+      const pageConditions = [...baseConditions];
+      if (input.cursor) {
+        pageConditions.push(gt(assets.id, input.cursor));
       }
 
       const rows = await db
         .select({ id: assets.id })
         .from(assets)
-        .where(and(...conditions))
-        .orderBy(desc(assets.id))
+        .where(and(...pageConditions))
+        .orderBy(asc(assets.id))
         .limit(LIMIT + 1);
 
       const hasMore = rows.length > LIMIT;
@@ -189,7 +212,7 @@ export const assetsRouter = t.router({
         hasMore && pageIds.length > 0 ? (pageIds[pageIds.length - 1] ?? null) : null;
 
       const items = await fetchPageWithCoverImage(pageIds);
-      return { items, nextCursor };
+      return { items, total, nextCursor };
     }),
 
   get: protectedProcedure

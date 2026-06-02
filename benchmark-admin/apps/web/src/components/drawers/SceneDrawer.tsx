@@ -24,6 +24,14 @@ const SceneFormSchema = z.object({
 });
 type SceneFormValues = z.infer<typeof SceneFormSchema>;
 
+// elements is a string in legacy/migrated data, but older new-benchmark records
+// may have persisted an array — tolerate both when populating the form.
+function elementsToText(v: unknown): string {
+  if (Array.isArray(v)) return v.join(', ');
+  if (typeof v === 'string') return v;
+  return '';
+}
+
 const EMPTY: SceneFormValues = {
   name: '',
   era: '',
@@ -60,7 +68,7 @@ export function SceneDrawer({
           genre: a.genre ?? '',
           scene_type: a.data.scene_type ?? '',
           mood: a.data.mood ?? '',
-          elements: a.data.elements?.join(', ') ?? '',
+          elements: elementsToText(a.data.elements),
           prompt: a.data.prompt ?? '',
           description: a.data.description ?? '',
         },
@@ -70,9 +78,6 @@ export function SceneDrawer({
   }, [ctx.asset, form]);
 
   function buildPayload(values: SceneFormValues) {
-    const elements = values.elements
-      ? values.elements.split(',').map((s) => s.trim()).filter(Boolean)
-      : undefined;
     return {
       name: values.name,
       era: values.era || null,
@@ -80,7 +85,7 @@ export function SceneDrawer({
       data: {
         scene_type: values.scene_type || undefined,
         mood: values.mood || undefined,
-        elements,
+        elements: values.elements || undefined,
         prompt: values.prompt || undefined,
         description: values.description || undefined,
       },
@@ -122,7 +127,7 @@ export function SceneDrawer({
           ...current,
           scene_type: d.scene_type ?? current.scene_type,
           mood: d.mood ?? current.mood,
-          elements: d.elements?.join(', ') ?? current.elements,
+          elements: elementsToText(d.elements) || current.elements,
           prompt: d.prompt ?? current.prompt,
           description: d.description ?? current.description,
         }, { keepDirty: true });

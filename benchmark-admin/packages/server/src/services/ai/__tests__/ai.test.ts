@@ -169,19 +169,19 @@ describe('extractFields', () => {
   });
 
   it('returns a SceneData-shaped object for scene kind', async () => {
-    // elements is z.array(z.string()) in SceneDataSchema
+    // elements is z.string() in SceneDataSchema (matches legacy free-text shape)
     mockCreate.mockResolvedValue({
       choices: [
         {
           message: {
-            content: '{"scene_type":"室外","mood":"清晨","elements":["城墙","石桥"],"prompt":"","description":"","title":""}',
+            content: '{"scene_type":"室外","mood":"清晨","elements":"城墙、石桥","prompt":"","description":"","title":""}',
           },
         },
       ],
     });
     const { extractFields } = await import('../index.js');
     const result = await extractFields('scene', '一座古代室外场景');
-    expect(result).toMatchObject({ scene_type: '室外', mood: '清晨' });
+    expect(result).toMatchObject({ scene_type: '室外', mood: '清晨', elements: '城墙、石桥' });
   });
 });
 

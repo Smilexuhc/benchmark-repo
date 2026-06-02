@@ -130,10 +130,12 @@ describe('assetsRouter', () => {
 
       const page1 = await caller.assets.list({ kind: 'scene' });
       expect(page1.items.length).toBe(20);
+      expect(page1.total).toBeGreaterThanOrEqual(25);
       expect(page1.nextCursor).toBeTypeOf('number');
 
       const page2 = await caller.assets.list({ kind: 'scene', cursor: page1.nextCursor });
       expect(page2.items.length).toBeGreaterThanOrEqual(5);
+      expect(page2.total).toBe(page1.total);
       // IDs should not overlap between pages
       const page1Ids = new Set(page1.items.map((i: { id: number }) => i.id));
       for (const item of page2.items) {
@@ -254,6 +256,7 @@ describe('assetsRouter', () => {
       const listed = items.find((i: { id: number }) => i.id === asset.id);
       expect(listed).toBeDefined();
       expect(listed.images).toHaveLength(1);
+      expect(listed.imageCount).toBe(5);
       expect(listed.images[0].id).toBe(attached[2].id);
       expect(listed.coverImageId).toBe(attached[2].id);
 
