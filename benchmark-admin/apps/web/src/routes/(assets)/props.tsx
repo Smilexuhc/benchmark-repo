@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { AssetLibrary } from '@/components/asset-library/AssetLibrary';
 import { BatchToolbar } from '@/components/asset-library/BatchToolbar';
 import { PropDrawer } from '@/components/drawers/PropDrawer';
+import { AssetsLayout } from './__layout';
 
 const FIELDS = [
   { key: 'era' as const, label: '时代', options: ['古代', '现代', '未来', '奇幻', '科幻'] },
@@ -21,8 +22,7 @@ export const Route = createFileRoute('/(assets)/props')({
 function PropsPage() {
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   return (
-    <section>
-      <h1 className="mb-4 text-xl font-semibold tracking-tight">道具</h1>
+    <AssetsLayout>
       <AssetLibrary
         kind="prop"
         filterFields={FIELDS}
@@ -32,6 +32,6 @@ function PropsPage() {
         onSelectionChange={setSelectedIds}
         headerActions={<BatchToolbar selectedIds={selectedIds} />}
       />
-    </section>
+    </AssetsLayout>
   );
 }
