@@ -1,19 +1,21 @@
-import { zodResolver } from '@hookform/resolvers/zod';
-import { useEffect, useRef, useState } from 'react';
-import { type SubmitHandler, useForm } from 'react-hook-form';
-import { z } from 'zod';
+import { Button } from '@/components/ui/button';
+import { Cascader } from '@/components/ui/cascader';
+import { buildCascaderOptionsWithCounts } from '@/components/ui/cascader.helpers';
+import { Drawer } from '@/components/ui/drawer';
+import { Input } from '@/components/ui/input';
+import { Select } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
+import { type RouterOutputs, trpc } from '@/lib/trpc';
+import { CATEGORY_TREE, definitionFor } from '@benchmark-admin/shared/benchmark/categoryTree';
 import {
   QUESTION_TYPES,
   SHOT_TYPES,
   TASK_TYPES,
 } from '@benchmark-admin/shared/constants/question-types';
-import { CATEGORY_TREE, definitionFor } from '@benchmark-admin/shared/benchmark/categoryTree';
-import { Button } from '@/components/ui/button';
-import { Drawer } from '@/components/ui/drawer';
-import { Select } from '@/components/ui/select';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { type RouterOutputs, trpc } from '@/lib/trpc';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { type SubmitHandler, useForm } from 'react-hook-form';
+import { z } from 'zod';
 
 type MediaLink = RouterOutputs['benchmark']['get']['media']['character_image'][number];
 import { Field } from '@/components/drawers/shared/Field';
@@ -24,6 +26,15 @@ const SCENE_OPTIONS = ['电影 / 预告片', '短剧 / 剧情片段', '动画 / 
 const SCREEN_SIZE_OPTIONS = ['16:9', '9:16', '2.39:1'] as const;
 const SCORE_OPTIONS = [null, 0, 1, 2, 3, 4, 5] as const;
 const DIFFICULTY_OPTIONS = ['', '易', '中', '难'] as const;
+
+// Legacy parity highlight: ≥4 green, ≥2 blue, <2 orange, null gray.
+// Returned as a tailwind class string applied to the active score button.
+function scoreColor(score: number | null): string {
+  if (score === null) return 'border-gray-400 bg-gray-100 text-gray-700';
+  if (score >= 4) return 'border-emerald-500 bg-emerald-500 text-white';
+  if (score >= 2) return 'border-blue-500 bg-blue-500 text-white';
+  return 'border-orange-500 bg-orange-500 text-white';
+}
 
 // Legacy auto-prefixes the manual tag with the difficulty marker, e.g. 【难】.
 // Strip any existing 【易/中/难】 prefix before re-applying the current one, so
@@ -159,37 +170,30 @@ export function BenchmarkDrawer({ id, onClose, onSaved }: BenchmarkDrawerProps) 
   const shotType = form.watch('shotType');
   const scoreValue = form.watch('score');
 
-  // V3 category cascade (l1 → l2 → l3). Options derive from the shared tree;
-  // selecting a parent resets its descendants, and choosing an l3 leaf auto-fills
-  // the (read-only) definition from that leaf.
+  // V3 category cascade (l1 → l2 → l3). The shared Cascader handles narrowing;
+  // we just feed it the tree (decorated with per-node item counts from
+  // `benchmark.stats`) and write the full path on commit.
   const categoryL1 = form.watch('categoryL1');
   const categoryL2 = form.watch('categoryL2');
   const categoryL3 = form.watch('categoryL3');
   const categoryDefinition = form.watch('categoryDefinition');
-  const l1Node = CATEGORY_TREE.find((o) => o.value === categoryL1);
-  const l2Options = l1Node?.children ?? [];
-  const l2Node = l2Options.find((o) => o.value === categoryL2);
-  const l3Options = l2Node?.children ?? [];
 
-  function selectCategoryL1(value: string) {
-    form.setValue('categoryL1', value, { shouldDirty: true });
-    form.setValue('categoryL2', '', { shouldDirty: true });
-    form.setValue('categoryL3', '', { shouldDirty: true });
-    form.setValue('categoryDefinition', '', { shouldDirty: true });
-  }
-  function selectCategoryL2(value: string) {
-    form.setValue('categoryL2', value, { shouldDirty: true });
-    form.setValue('categoryL3', '', { shouldDirty: true });
-    form.setValue('categoryDefinition', '', { shouldDirty: true });
-  }
-  function selectCategoryL3(value: string) {
-    // Read parents from the live form store, not the render-time watch closure, so
-    // the derived definition can never be computed against a stale l1/l2.
-    const { categoryL1: l1, categoryL2: l2 } = form.getValues();
-    form.setValue('categoryL3', value, { shouldDirty: true });
-    form.setValue('categoryDefinition', definitionFor(l1, l2, value), {
-      shouldDirty: true,
-    });
+  const stats = trpc.benchmark.stats.useQuery();
+  const cascaderOptions = useMemo(
+    () => buildCascaderOptionsWithCounts(CATEGORY_TREE, stats.data?.groups ?? []),
+    [stats.data],
+  );
+  const cascaderValue = useMemo(
+    () => [categoryL1, categoryL2, categoryL3].filter((v) => v !== ''),
+    [categoryL1, categoryL2, categoryL3],
+  );
+
+  function selectCategoryPath(path: string[]) {
+    const [l1 = '', l2 = '', l3 = ''] = path;
+    form.setValue('categoryL1', l1, { shouldDirty: true });
+    form.setValue('categoryL2', l2, { shouldDirty: true });
+    form.setValue('categoryL3', l3, { shouldDirty: true });
+    form.setValue('categoryDefinition', definitionFor(l1, l2, l3), { shouldDirty: true });
   }
 
   // Non-blocking completeness feedback: the product wants curated items, but an
@@ -275,46 +279,15 @@ export function BenchmarkDrawer({ id, onClose, onSaved }: BenchmarkDrawerProps) 
           className="space-y-3 rounded-md border border-[hsl(var(--border))] p-3"
         >
           <h3 className="text-sm font-semibold">新分类</h3>
-          <div className="grid grid-cols-3 gap-3">
-            <Field label="一级分类">
-              <Select value={categoryL1} onChange={(e) => selectCategoryL1(e.target.value)}>
-                <option value="">—</option>
-                {CATEGORY_TREE.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-            <Field label="二级分类">
-              <Select
-                value={categoryL2}
-                disabled={!categoryL1}
-                onChange={(e) => selectCategoryL2(e.target.value)}
-              >
-                <option value="">—</option>
-                {l2Options.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-            <Field label="三级分类">
-              <Select
-                value={categoryL3}
-                disabled={!categoryL2}
-                onChange={(e) => selectCategoryL3(e.target.value)}
-              >
-                <option value="">—</option>
-                {l3Options.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-          </div>
+          <Field label="分类">
+            <Cascader
+              ariaLabel="分类"
+              placeholder="选择分类…"
+              options={cascaderOptions}
+              value={cascaderValue}
+              onChange={(path) => selectCategoryPath(path)}
+            />
+          </Field>
           {categoryDefinition ? (
             <p className="text-xs text-[hsl(var(--muted-foreground))]">
               出题意图：{categoryDefinition}
@@ -366,23 +339,28 @@ export function BenchmarkDrawer({ id, onClose, onSaved }: BenchmarkDrawerProps) 
         </Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label="评分（0–5）">
-            <div className="flex gap-1">
-              {SCORE_OPTIONS.map((v) => (
-                <button
-                  key={v ?? 'null'}
-                  type="button"
-                  onClick={() =>
-                    form.setValue('score', v as FormValues['score'], { shouldDirty: true })
-                  }
-                  className={`flex-1 rounded border px-1 py-1 text-xs font-medium transition-colors ${
-                    scoreValue === v
-                      ? 'border-[hsl(var(--primary))] bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))]'
-                      : 'border-[hsl(var(--border))] bg-[hsl(var(--background))] text-[hsl(var(--foreground))] hover:bg-[hsl(var(--muted))]'
-                  }`}
-                >
-                  {v === null ? '—' : v}
-                </button>
-              ))}
+            <div className="flex gap-1.5">
+              {SCORE_OPTIONS.map((v) => {
+                const isActive = scoreValue === v;
+                return (
+                  <button
+                    key={v ?? 'null'}
+                    type="button"
+                    aria-pressed={isActive}
+                    aria-label={v === null ? '未评分' : `评分 ${v}`}
+                    onClick={() =>
+                      form.setValue('score', v as FormValues['score'], { shouldDirty: true })
+                    }
+                    className={`flex-1 rounded border px-1 py-1 text-xs font-medium transition-colors ${
+                      isActive
+                        ? scoreColor(v)
+                        : 'border-[hsl(var(--border))] bg-[hsl(var(--background))] text-[hsl(var(--foreground))] hover:bg-[hsl(var(--muted))]'
+                    }`}
+                  >
+                    {v === null ? '未评分' : v}
+                  </button>
+                );
+              })}
             </div>
           </Field>
           <label className="mt-6 flex items-center gap-2 text-sm">
