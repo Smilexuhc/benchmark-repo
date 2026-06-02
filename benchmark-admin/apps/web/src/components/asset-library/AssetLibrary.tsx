@@ -2,6 +2,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useDebounce } from 'use-debounce';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { trpc } from '@/lib/trpc';
 import { AssetCard, type AssetCardData } from './AssetCard';
 import { FilterPanel } from './FilterPanel';
@@ -11,8 +12,14 @@ import { type AssetKind, buildServerFilters, useFilterFields, useFilters } from 
 // the virtualizer uses this as an estimate and adapts to measured heights.
 const ROW_ESTIMATE_PX = 280;
 const ROW_GAP_PX = 12;
-const SCROLL_HEIGHT = 'calc(100vh - 220px)';
+const SCROLL_HEIGHT = 'calc(100vh - 260px)';
 const NEAR_BOTTOM_PX = 360;
+
+const KIND_LABEL: Record<AssetKind, string> = {
+  character: '角色',
+  scene: '场景',
+  prop: '道具',
+};
 
 // @tanstack/react-virtual re-exports `VirtualItem` via `export *`, which our
 // `verbatimModuleSyntax` setup doesn't surface for direct import. Mirror the
@@ -116,43 +123,56 @@ export function AssetLibrary({
   const items: AssetCardData[] =
     list.data?.pages.flatMap((p: { items: AssetCardData[] }) => p.items) ?? [];
 
+  const activeFilterCount = Object.values(filterState.filters).reduce(
+    (sum, v) => sum + (Array.isArray(v) ? v.length : 0),
+    0,
+  );
+  const kindLabel = KIND_LABEL[kind];
+
   return (
     <div className="grid grid-cols-[240px_1fr] gap-6">
       <FilterPanel
         fields={filterFields}
         filters={filterState.filters}
-        search={filterState.search}
         deletedOnly={filterState.deletedOnly}
+        hitCount={items.length}
+        activeFilterCount={activeFilterCount}
         onFilterChange={filterState.setFilter}
-        onSearchChange={filterState.setSearch}
         onDeletedOnlyChange={filterState.setDeletedOnly}
         onReset={filterState.reset}
       />
 
       <div>
-        <header className="mb-4 flex items-center justify-between">
-          <div className="text-sm text-[hsl(var(--muted-foreground))]">
-            共 {items.length} 条{list.isFetching ? '（加载中…）' : ''}
-          </div>
-          <div className="flex items-center gap-2">
-            {headerActions}
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={!exportUrl.data}
-              onClick={() => {
-                if (exportUrl.data) window.location.href = exportUrl.data.url;
-              }}
-            >
-              导出 ZIP
+        <div className="-mx-5 mb-3 flex items-center gap-3 border-b border-[hsl(var(--border))] px-5 py-2.5">
+          <div className="flex-1" />
+          <Input
+            value={filterState.search}
+            onChange={(e) => filterState.setSearch(e.target.value)}
+            placeholder="搜索"
+            aria-label="搜索"
+            className="w-72"
+          />
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={!exportUrl.data}
+            onClick={() => {
+              if (exportUrl.data) window.location.href = exportUrl.data.url;
+            }}
+          >
+            导出资产包
+          </Button>
+          {headerActions ?? (
+            <Button size="sm" variant="outline" disabled>
+              批量生成
             </Button>
-            {renderDrawer ? (
-              <Button size="sm" onClick={() => setDrawerId('new')}>
-                新建
-              </Button>
-            ) : null}
-          </div>
-        </header>
+          )}
+          {renderDrawer ? (
+            <Button size="sm" onClick={() => setDrawerId('new')}>
+              新建{kindLabel}
+            </Button>
+          ) : null}
+        </div>
 
         {list.isError ? (
           <p role="alert" className="text-sm text-[hsl(var(--destructive))]">
