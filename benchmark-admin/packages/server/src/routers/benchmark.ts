@@ -9,6 +9,7 @@ import {
   type MediaByRoleType,
   type MediaLinkOutType,
 } from '@benchmark-admin/shared/schemas/benchmark';
+import { definitionFor } from '@benchmark-admin/shared/benchmark/categoryTree';
 import { TRPCError } from '@trpc/server';
 import { type SQL, and, desc, eq, gte, inArray, isNotNull, isNull, lt, sql } from 'drizzle-orm';
 import { z } from 'zod';
@@ -229,6 +230,29 @@ const ItemScalars = z.object({
   needsRevision: z.boolean().default(false),
 });
 
+// categoryDefinition is derived data: when the (l1,l2,l3) path resolves to a known
+// tree leaf, that leaf's definition is authoritative and overrides any client-sent
+// value so the stored definition can never drift from the selected path. An
+// unresolved path (legacy free-text categories not in the tree) keeps whatever value
+// was supplied. Only applies when all three levels are present (full create, or an
+// update payload that carries the category path); partial updates that omit the
+// category fields pass through untouched.
+function deriveCategoryDefinition<
+  T extends {
+    categoryL1?: string | undefined;
+    categoryL2?: string | undefined;
+    categoryL3?: string | undefined;
+    categoryDefinition?: string | undefined;
+  },
+>(scalars: T): T {
+  const { categoryL1, categoryL2, categoryL3 } = scalars;
+  if (categoryL1 === undefined || categoryL2 === undefined || categoryL3 === undefined) {
+    return scalars;
+  }
+  const canonical = definitionFor(categoryL1, categoryL2, categoryL3);
+  return canonical ? { ...scalars, categoryDefinition: canonical } : scalars;
+}
+
 // ── Router ────────────────────────────────────────────────────────────────────
 
 export const benchmarkRouter = t.router({
@@ -363,7 +387,8 @@ export const benchmarkRouter = t.router({
   create: protectedProcedure
     .input(ItemScalars.extend({ media: MediaBundleInput }))
     .mutation(async ({ input }) => {
-      const { media, ...scalars } = input;
+      const { media, ...rawScalars } = input;
+      const scalars = deriveCategoryDefinition(rawScalars);
 
       let item: typeof videoBenchmarkItems.$inferSelect;
       try {
@@ -404,7 +429,8 @@ export const benchmarkRouter = t.router({
         .extend({ media: MediaBundleInput }),
     )
     .mutation(async ({ input }) => {
-      const { id, media, ...scalars } = input;
+      const { id, media, ...rawScalars } = input;
+      const scalars = deriveCategoryDefinition(rawScalars);
 
       let item: typeof videoBenchmarkItems.$inferSelect;
       try {

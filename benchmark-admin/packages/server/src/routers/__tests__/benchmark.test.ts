@@ -552,5 +552,44 @@ describe('benchmarkRouter', () => {
       const filtered = await caller.benchmark.list({ filters: { categoryL1: '单镜头' } });
       expect(filtered.items.map((i: { id: number }) => i.id)).not.toContain(blank.id);
     });
+
+    it('create overrides a tampered categoryDefinition with the tree-canonical value', async () => {
+      // A resolvable (l1,l2,l3) path is authoritative: the server recomputes the
+      // definition from the tree leaf and ignores whatever the client sent, so
+      // the stored definition can never drift from the selected path.
+      const created = await caller.benchmark.create({
+        ...cat,
+        categoryDefinition: '客户端伪造的定义',
+        media: emptyMedia,
+      });
+      const fetched = await caller.benchmark.get({ id: created.id });
+      expect(fetched.categoryDefinition).toBe(cat.categoryDefinition);
+    });
+
+    it('create preserves a client categoryDefinition for an unresolved (legacy) path', async () => {
+      // Legacy free-text categories not present in the tree must keep the
+      // supplied definition — derivation only overrides when the path resolves.
+      const legacyDef = '历史遗留的自由文本定义';
+      const created = await caller.benchmark.create({
+        categoryL1: '历史一级',
+        categoryL2: '历史二级',
+        categoryL3: '历史三级',
+        categoryDefinition: legacyDef,
+        media: emptyMedia,
+      });
+      const fetched = await caller.benchmark.get({ id: created.id });
+      expect(fetched.categoryDefinition).toBe(legacyDef);
+    });
+
+    it('update overrides categoryDefinition from the tree when the path resolves', async () => {
+      const created = await caller.benchmark.create({ shotType: 'derive-rt', media: emptyMedia });
+      const updated = await caller.benchmark.update({
+        id: created.id,
+        ...cat,
+        categoryDefinition: '客户端伪造的定义',
+        media: emptyMedia,
+      });
+      expect(updated.categoryDefinition).toBe(cat.categoryDefinition);
+    });
   });
 });

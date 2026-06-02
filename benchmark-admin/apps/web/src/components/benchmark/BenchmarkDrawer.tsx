@@ -183,8 +183,11 @@ export function BenchmarkDrawer({ id, onClose, onSaved }: BenchmarkDrawerProps) 
     form.setValue('categoryDefinition', '', { shouldDirty: true });
   }
   function selectCategoryL3(value: string) {
+    // Read parents from the live form store, not the render-time watch closure, so
+    // the derived definition can never be computed against a stale l1/l2.
+    const { categoryL1: l1, categoryL2: l2 } = form.getValues();
     form.setValue('categoryL3', value, { shouldDirty: true });
-    form.setValue('categoryDefinition', definitionFor(categoryL1, categoryL2, value), {
+    form.setValue('categoryDefinition', definitionFor(l1, l2, value), {
       shouldDirty: true,
     });
   }

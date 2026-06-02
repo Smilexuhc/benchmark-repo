@@ -336,9 +336,10 @@ export function BenchmarkList() {
           <Button
             size="sm"
             variant="outline"
-            disabled={!exportUrl.data}
+            disabled={!exportUrl.data || exportUrl.isFetching}
             onClick={() => {
-              if (exportUrl.data) window.location.href = exportUrl.data.url;
+              if (exportUrl.data && !exportUrl.isFetching)
+                window.location.href = exportUrl.data.url;
             }}
           >
             导出 ZIP
@@ -431,8 +432,11 @@ export function BenchmarkList() {
                       <span className="text-xs text-[hsl(var(--muted-foreground))]">—</span>
                     ) : null}
                   </div>
-                  <div className="truncate" title={item.categoryL3 || item.categoryL1 || ''}>
-                    {item.categoryL3 || item.categoryL1 || '—'}
+                  <div
+                    className="truncate"
+                    title={item.categoryL3 || item.categoryL2 || item.categoryL1 || ''}
+                  >
+                    {item.categoryL3 || item.categoryL2 || item.categoryL1 || '—'}
                   </div>
                   <div className="truncate">{item.shotType || '—'}</div>
                   <div className="truncate">{item.questionType || '—'}</div>
