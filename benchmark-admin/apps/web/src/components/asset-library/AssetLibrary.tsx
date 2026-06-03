@@ -25,6 +25,16 @@ const KIND_LABEL: Record<AssetKind, string> = {
   prop: '道具',
 };
 
+// Per-kind search placeholders mirror legacy `frontend/src/App.tsx`:
+//   character → 搜索人设 / 特征 / 提示词
+//   scene     → 搜索场景名 / 关键元素 / 提示词
+//   prop      → 搜索名称 / 提示词 / 描述
+const SEARCH_PLACEHOLDER: Record<AssetKind, string> = {
+  character: '搜索人设 / 特征 / 提示词',
+  scene: '搜索场景名 / 关键元素 / 提示词',
+  prop: '搜索名称 / 提示词 / 描述',
+};
+
 type VRow = { key: string | number; index: number; start: number };
 
 export type { AssetKind };
@@ -180,7 +190,7 @@ export function AssetLibrary({ kind, renderDrawer, renderInfo, renderExtra }: As
           <Input
             value={filterState.search}
             onChange={(e) => filterState.setSearch(e.target.value)}
-            placeholder="搜索"
+            placeholder={SEARCH_PLACEHOLDER[kind]}
             aria-label="搜索"
             className="w-72"
           />

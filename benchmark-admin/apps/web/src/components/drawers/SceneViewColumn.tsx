@@ -3,6 +3,15 @@ import { Button } from '@/components/ui/button';
 import { trpc } from '@/lib/trpc';
 import { useState } from 'react';
 
+// Legacy SceneViewColumn shape: header "多视角", two side-by-side tiles labelled
+// "正反打" and "4视图", each with a 96px-tall preview slot. We keep admin's
+// mutation wiring and presigned URL contract.
+type Mode = 'reverse' | 'multiview';
+const VIEWS: { mode: Mode; label: string }[] = [
+  { mode: 'reverse', label: '正反打' },
+  { mode: 'multiview', label: '4视图' },
+];
+
 export type SceneViewColumnProps = {
   sceneId: number;
   images: { id: number; url: string; source?: string }[];
@@ -11,46 +20,29 @@ export type SceneViewColumnProps = {
 
 export function SceneViewColumn({ sceneId, images, onAfter }: SceneViewColumnProps) {
   const generate = trpc.scenes.generateView.useMutation();
+  const [busyMode, setBusyMode] = useState<Mode | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  async function run(mode: 'reverse' | 'multiview') {
+  async function run(mode: Mode) {
     setError(null);
+    setBusyMode(mode);
     try {
       await generate.mutateAsync({ id: sceneId, mode });
       onAfter();
     } catch (e) {
       setError(e instanceof Error ? e.message : '生成视角失败');
+    } finally {
+      setBusyMode(null);
     }
   }
 
-  const reverseImages = images.filter((i) => i.source === 'reverse');
-  const multiviewImages = images.filter((i) => i.source === 'multiview');
+  function imageFor(mode: Mode) {
+    return images.find((i) => i.source === mode) ?? null;
+  }
 
   return (
-    <section aria-label="场景视角" className="space-y-3">
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-medium">视角生成</h3>
-        <div className="flex gap-2">
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            disabled={generate.isPending}
-            onClick={() => run('reverse')}
-          >
-            反向镜头
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            disabled={generate.isPending}
-            onClick={() => run('multiview')}
-          >
-            四视图
-          </Button>
-        </div>
-      </div>
+    <section aria-label="多视角" className="space-y-2.5">
+      <div className="text-[13px] font-semibold">多视角</div>
 
       {error ? (
         <p role="alert" className="text-xs text-[hsl(var(--destructive))]">
@@ -58,37 +50,46 @@ export function SceneViewColumn({ sceneId, images, onAfter }: SceneViewColumnPro
         </p>
       ) : null}
 
-      <div className="grid grid-cols-2 gap-2 text-xs">
-        <div>
-          <div className="mb-1 text-[hsl(var(--muted-foreground))]">反向镜头</div>
-          {reverseImages.length === 0 ? (
-            <p className="text-[hsl(var(--muted-foreground))]">无</p>
-          ) : (
-            reverseImages.map((img) => (
-              <LazyImage
-                key={img.id}
-                src={img.url}
-                alt={`reverse-${img.id}`}
-                className="mb-1 aspect-square w-full rounded"
-              />
-            ))
-          )}
-        </div>
-        <div>
-          <div className="mb-1 text-[hsl(var(--muted-foreground))]">四视图</div>
-          {multiviewImages.length === 0 ? (
-            <p className="text-[hsl(var(--muted-foreground))]">无</p>
-          ) : (
-            multiviewImages.map((img) => (
-              <LazyImage
-                key={img.id}
-                src={img.url}
-                alt={`multiview-${img.id}`}
-                className="mb-1 aspect-square w-full rounded"
-              />
-            ))
-          )}
-        </div>
+      <div className="grid grid-cols-2 gap-2">
+        {VIEWS.map(({ mode, label }) => {
+          const img = imageFor(mode);
+          const loading = busyMode === mode;
+          return (
+            <div key={mode} className="flex flex-col gap-1">
+              <div className="text-xs text-[hsl(var(--muted-foreground))]">{label}</div>
+              {loading ? (
+                <div className="flex h-24 flex-col items-center justify-center rounded bg-[hsl(var(--muted))] text-[10px] text-[hsl(var(--muted-foreground))]">
+                  <span
+                    role="status"
+                    aria-label="生成中"
+                    className="mb-1 inline-block h-4 w-4 animate-spin rounded-full border-2 border-[hsl(var(--muted-foreground))] border-t-transparent"
+                  />
+                  <span>约 2 分钟…</span>
+                </div>
+              ) : img ? (
+                <LazyImage
+                  src={img.url}
+                  alt={label}
+                  className="h-24 w-full rounded bg-[hsl(var(--muted))] object-contain"
+                />
+              ) : (
+                <div className="flex h-24 items-center justify-center rounded bg-[hsl(var(--muted))] text-[11px] text-[hsl(var(--muted-foreground))]">
+                  无
+                </div>
+              )}
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={loading || generate.isPending}
+                onClick={() => run(mode)}
+                className="h-7 text-xs"
+              >
+                {img ? '重新生成' : '生成'}
+              </Button>
+            </div>
+          );
+        })}
       </div>
     </section>
   );

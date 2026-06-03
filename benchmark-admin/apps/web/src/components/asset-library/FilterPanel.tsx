@@ -55,7 +55,7 @@ export function FilterPanel({
 
       {fields.map((field) => (
         <div key={field.key} className="mt-4">
-          <div className="mb-2 text-xs font-semibold uppercase text-[hsl(var(--muted-foreground))]">
+          <div className="mb-2 text-[13px] font-semibold text-[hsl(var(--foreground))]">
             {field.label}
           </div>
           <div className="flex flex-col gap-1.5">

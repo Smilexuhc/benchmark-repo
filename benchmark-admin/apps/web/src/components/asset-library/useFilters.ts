@@ -30,23 +30,24 @@ export type FilterField = {
 // even if the options payload happens to include others.
 const FIELDS_BY_KIND: Record<AssetKind, ReadonlyArray<{ key: keyof AssetFilters; label: string }>> =
   {
+    // Order + labels mirror legacy frontend/src/App.tsx filterFields and
+    // FIELD_LABELS in frontend/src/types.ts so the panel reads identically.
     character: [
       { key: 'era', label: '时代' },
-      { key: 'genre', label: '题材' },
       { key: 'type', label: '类型' },
       { key: 'gender', label: '性别' },
-      { key: 'age', label: '年龄' },
+      { key: 'age', label: '年龄段' },
+      { key: 'genre', label: '常见题材' },
     ],
     scene: [
       { key: 'era', label: '时代' },
-      { key: 'genre', label: '题材' },
       { key: 'scene_type', label: '场景类型' },
-      // Legacy field is 氛围时段 (time-of-day mood). Admin previously labelled
-      // it 氛围, which read as a separate concept from the seed values
-      // 白天/黄昏/夜晚 — fixed here.
+      { key: 'genre', label: '常见题材' },
+      // Legacy field is 氛围时段 (time-of-day mood), not 氛围 — values are
+      // 白天/黄昏/夜晚.
       { key: 'mood', label: '氛围时段' },
     ],
-    prop: [{ key: 'category', label: '分类' }],
+    prop: [{ key: 'category', label: '类别' }],
   };
 
 const FILTER_PARSERS = {
