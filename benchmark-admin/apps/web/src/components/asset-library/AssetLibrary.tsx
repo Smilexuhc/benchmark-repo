@@ -149,6 +149,12 @@ export function AssetLibrary({ kind, renderDrawer, renderInfo, renderExtra }: As
   const items = (list.data?.pages.flatMap((p: { items: AssetCardData[] }) => p.items) ??
     []) as AssetCardData[];
 
+  // Total count of rows matching the filter, server-side. Falls back to the
+  // length we've loaded so the count never appears blank during the first
+  // fetch.
+  const total =
+    (list.data?.pages[0] as { total?: number } | undefined)?.total ?? items.length;
+
   const activeFilterCount = Object.values(filterState.filters).reduce(
     (sum, v) => sum + (Array.isArray(v) ? v.length : 0),
     0,
@@ -161,7 +167,7 @@ export function AssetLibrary({ kind, renderDrawer, renderInfo, renderExtra }: As
         fields={filterFields}
         filters={filterState.filters}
         deletedOnly={filterState.deletedOnly}
-        hitCount={items.length}
+        hitCount={total}
         activeFilterCount={activeFilterCount}
         onFilterChange={filterState.setFilter}
         onDeletedOnlyChange={filterState.setDeletedOnly}

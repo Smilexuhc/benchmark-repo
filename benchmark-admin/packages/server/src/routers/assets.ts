@@ -221,49 +221,64 @@ export const assetsRouter = t.router({
     )
     .query(async ({ input }) => {
       const LIMIT = 20;
-      const conditions: SQL[] = [eq(assets.kind, input.kind)];
+      // baseConditions excludes the cursor — they're what `total` is computed
+      // against. pageConditions adds the cursor on top to walk one page.
+      const baseConditions: SQL[] = [eq(assets.kind, input.kind)];
 
       if (input.deletedOnly) {
-        conditions.push(isNotNull(assets.deletedAt));
+        baseConditions.push(isNotNull(assets.deletedAt));
       } else {
-        conditions.push(isNull(assets.deletedAt));
-      }
-
-      if (input.cursor) {
-        conditions.push(lt(assets.id, input.cursor));
+        baseConditions.push(isNull(assets.deletedAt));
       }
 
       if (input.search?.trim()) {
         const term = `%${input.search.trim()}%`;
-        conditions.push(
+        baseConditions.push(
           sql`(${assets.name} ILIKE ${term} OR cast(${assets.data} as text) ILIKE ${term})`,
         );
       }
 
       const { filters } = input;
       if (filters) {
-        if (filters.era?.length) conditions.push(inArray(assets.era, filters.era));
-        if (filters.genre?.length) conditions.push(inArray(assets.genre, filters.genre));
+        if (filters.era?.length) baseConditions.push(inArray(assets.era, filters.era));
+        if (filters.genre?.length) baseConditions.push(inArray(assets.genre, filters.genre));
         if (filters.type?.length)
-          conditions.push(inArray(sql<string>`(${assets.data}->>'type')`, filters.type));
+          baseConditions.push(inArray(sql<string>`(${assets.data}->>'type')`, filters.type));
         if (filters.gender?.length)
-          conditions.push(inArray(sql<string>`(${assets.data}->>'gender')`, filters.gender));
+          baseConditions.push(inArray(sql<string>`(${assets.data}->>'gender')`, filters.gender));
         if (filters.age?.length)
-          conditions.push(inArray(sql<string>`(${assets.data}->>'age')`, filters.age));
+          baseConditions.push(inArray(sql<string>`(${assets.data}->>'age')`, filters.age));
         if (filters.scene_type?.length)
-          conditions.push(
+          baseConditions.push(
             inArray(sql<string>`(${assets.data}->>'scene_type')`, filters.scene_type),
           );
         if (filters.mood?.length)
-          conditions.push(inArray(sql<string>`(${assets.data}->>'mood')`, filters.mood));
+          baseConditions.push(inArray(sql<string>`(${assets.data}->>'mood')`, filters.mood));
         if (filters.category?.length)
-          conditions.push(inArray(sql<string>`(${assets.data}->>'category')`, filters.category));
+          baseConditions.push(
+            inArray(sql<string>`(${assets.data}->>'category')`, filters.category),
+          );
+      }
+
+      const baseWhere = and(...baseConditions);
+
+      // Count of all rows matching the filter (independent of cursor).
+      // Surfaces the "命中 N 个" total in the FilterPanel.
+      const totalRow = await db
+        .select({ total: sql<number>`count(*)::int` })
+        .from(assets)
+        .where(baseWhere);
+      const total = totalRow[0]?.total ?? 0;
+
+      const pageConditions = [...baseConditions];
+      if (input.cursor) {
+        pageConditions.push(lt(assets.id, input.cursor));
       }
 
       const rows = await db
         .select({ id: assets.id })
         .from(assets)
-        .where(and(...conditions))
+        .where(and(...pageConditions))
         .orderBy(desc(assets.id))
         .limit(LIMIT + 1);
 
@@ -273,7 +288,7 @@ export const assetsRouter = t.router({
         hasMore && pageIds.length > 0 ? (pageIds[pageIds.length - 1] ?? null) : null;
 
       const items = await fetchPageWithCoverImage(pageIds);
-      return { items, nextCursor };
+      return { items, total, nextCursor };
     }),
 
   get: protectedProcedure
