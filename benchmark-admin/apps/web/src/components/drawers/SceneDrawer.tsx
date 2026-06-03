@@ -64,6 +64,15 @@ export function SceneDrawer({
   useEffect(() => {
     if (ctx.asset && ctx.asset.kind === 'scene') {
       const a = ctx.asset;
+      // `data.elements` arrives as `string` on rows migrated from legacy and
+      // as `string[]` on rows created via this admin schema; tolerate both.
+      // Calling `.join` on a string here was the round-9 crash on 编辑.
+      const rawElements = a.data.elements as unknown;
+      const elements = Array.isArray(rawElements)
+        ? rawElements.join(', ')
+        : typeof rawElements === 'string'
+          ? rawElements
+          : '';
       form.reset(
         {
           name: a.name,
@@ -71,7 +80,7 @@ export function SceneDrawer({
           genre: a.genre ?? '',
           scene_type: a.data.scene_type ?? '',
           mood: a.data.mood ?? '',
-          elements: a.data.elements?.join(', ') ?? '',
+          elements,
           prompt: a.data.prompt ?? '',
           description: a.data.description ?? '',
         },
@@ -144,7 +153,11 @@ export function SceneDrawer({
             ...current,
             scene_type: d.scene_type ?? current.scene_type,
             mood: d.mood ?? current.mood,
-            elements: d.elements?.join(', ') ?? current.elements,
+            elements: Array.isArray(d.elements)
+              ? d.elements.join(', ')
+              : typeof d.elements === 'string'
+                ? d.elements
+                : current.elements,
             prompt: d.prompt ?? current.prompt,
             description: d.description ?? current.description,
           },
