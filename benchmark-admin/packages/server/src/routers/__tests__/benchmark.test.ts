@@ -103,6 +103,7 @@ describe('benchmarkRouter', () => {
         shotType: 'close-up',
         taskType: 'generate',
         questionType: 'quality',
+        expectedVideoTimeInSec: 12,
         media: {
           characterImageIds: [charImgId1, charImgId2, charImgId3],
           sceneImageIds: [sceneImgId],
@@ -118,10 +119,12 @@ describe('benchmarkRouter', () => {
       expect(item.media.scene_image.length).toBe(1);
       expect(item.media.video_output.length).toBe(1);
       expect(item.media.video_output[0]?.mediaId).toBe(videoOutId);
+      expect(item.expectedVideoTimeInSec).toBe(12);
 
       // Verify via get
       const fetched = await caller.benchmark.get({ id: item.id });
       expect(fetched.media.character_image.length).toBe(3);
+      expect(fetched.expectedVideoTimeInSec).toBe(12);
     });
   });
 

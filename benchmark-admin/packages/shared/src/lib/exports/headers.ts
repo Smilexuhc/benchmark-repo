@@ -12,6 +12,7 @@ export const EXPORT_HEADERS: Record<string, string> = {
   categoryDefinition: '分类定义',
   difficulty: '难度',
   textPrompt: '文本提示词',
+  expectedVideoTimeInSec: '视频时长（秒）',
   judgingCriteria: '评判标准',
   score: '评分',
   needsRevision: '待修改',

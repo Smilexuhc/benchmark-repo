@@ -172,6 +172,7 @@ function pickInput(item: VideoBenchmarkItem): VideoBenchmarkItemInput {
     audio_input: item.audio_input,
     video_input: item.video_input,
     text_prompt: item.text_prompt,
+    expected_video_time_in_sec: item.expected_video_time_in_sec,
     judging_criteria: item.judging_criteria,
     video_output: item.video_output,
     score: item.score,
@@ -692,6 +693,23 @@ export default function BenchmarkItemDrawer({
           />
         </Field>
       ))}
+
+      <Field label={FIELD_LABELS.expected_video_time_in_sec}>
+        <Input
+          type="number"
+          min={0}
+          step={1}
+          value={form.expected_video_time_in_sec ?? ''}
+          onChange={(e) =>
+            set(
+              'expected_video_time_in_sec',
+              e.target.value === '' ? null : Number(e.target.value),
+            )
+          }
+          placeholder="预期视频时长（秒）"
+          allowClear
+        />
+      </Field>
 
       {MEDIA_FIELDS.map((field) => (
         <MediaPicker

@@ -153,6 +153,14 @@ function screenAspectRatio(screenSize: string): string {
 // 视频长边目标尺寸（点击放大用 controls 已带的 fullscreen）
 const VIDEO_LONG_SIDE = 200
 
+function formatExpectedVideoTime(seconds: number | null): string | null {
+  if (seconds === null || seconds === undefined) return null
+  if (seconds < 60) return `${seconds}秒`
+  const minutes = Math.floor(seconds / 60)
+  const rest = seconds % 60
+  return rest === 0 ? `${minutes}分钟` : `${minutes}分${rest}秒`
+}
+
 function VideoRun({
   media,
   version,
@@ -271,6 +279,7 @@ function OutputColumn({ item }: { item: VideoBenchmarkItem }) {
   const screenSize = item.screen_size || ''
   const aspect = screenAspectRatio(screenSize)
   const isVertical = aspect === '9 / 16'
+  const expectedVideoTime = formatExpectedVideoTime(item.expected_video_time_in_sec)
   const placeholderStyle: React.CSSProperties = isVertical
     ? { height: VIDEO_LONG_SIDE, width: 'auto', aspectRatio: aspect }
     : { width: VIDEO_LONG_SIDE, height: 'auto', aspectRatio: aspect }
@@ -290,6 +299,10 @@ function OutputColumn({ item }: { item: VideoBenchmarkItem }) {
     >
       <div
         style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: 8,
           paddingBottom: 6,
           borderBottom: '1px solid #f0f0f0',
           fontSize: 13,
@@ -297,10 +310,28 @@ function OutputColumn({ item }: { item: VideoBenchmarkItem }) {
           color: '#5a6068',
         }}
       >
-        {MODEL_NAME}
-        {runs.length > 1 && (
-          <span style={{ fontSize: 11, color: '#9aa0a6', marginLeft: 8, fontWeight: 'normal' }}>
-            {runs.length} 个版本
+        <span>
+          {MODEL_NAME}
+          {runs.length > 1 && (
+            <span style={{ fontSize: 11, color: '#9aa0a6', marginLeft: 8, fontWeight: 'normal' }}>
+              {runs.length} 个版本
+            </span>
+          )}
+        </span>
+        {expectedVideoTime && (
+          <span
+            style={{
+              flexShrink: 0,
+              borderRadius: 4,
+              background: '#fff',
+              border: '1px solid #eef0f3',
+              padding: '1px 6px',
+              fontSize: 12,
+              color: '#1f2328',
+              fontWeight: 500,
+            }}
+          >
+            视频时长 {expectedVideoTime}
           </span>
         )}
       </div>

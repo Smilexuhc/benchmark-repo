@@ -41,6 +41,14 @@ function screenSizeToAspect(screenSize: string): string {
   return '16 / 9';
 }
 
+function formatExpectedVideoTime(seconds: number | null): string | null {
+  if (seconds === null) return null;
+  if (seconds < 60) return `${seconds}秒`;
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+  return rest === 0 ? `${minutes}分钟` : `${minutes}分${rest}秒`;
+}
+
 export type OutputColumnProps = {
   item: BenchmarkItem;
   className?: string;
@@ -71,6 +79,7 @@ export function OutputColumn({ item, className }: OutputColumnProps) {
   const aspect = screenSizeToAspect(item.screenSize ?? '');
   const score = item.score;
   const scoreLabel = score === null ? '未评分' : `评分 ${score}/5`;
+  const expectedVideoTime = formatExpectedVideoTime(item.expectedVideoTimeInSec);
 
   function applyScore(next: number | null) {
     if (next === score) return;
@@ -87,8 +96,13 @@ export function OutputColumn({ item, className }: OutputColumnProps) {
       className={cn('flex min-w-0 flex-col gap-3 bg-[hsl(var(--muted))]/40 p-4', className)}
       onClick={(e) => e.stopPropagation()}
     >
-      <div className="flex items-center justify-between border-b border-[hsl(var(--border))] pb-1.5 text-sm font-semibold text-[hsl(var(--muted-foreground))]">
-        {MODEL_NAME}
+      <div className="flex items-center justify-between gap-2 border-b border-[hsl(var(--border))] pb-1.5 text-sm font-semibold text-[hsl(var(--muted-foreground))]">
+        <span>{MODEL_NAME}</span>
+        {expectedVideoTime ? (
+          <span className="rounded bg-[hsl(var(--background))] px-1.5 py-0.5 text-xs font-medium text-[hsl(var(--foreground))]">
+            视频时长 {expectedVideoTime}
+          </span>
+        ) : null}
       </div>
 
       {/* Legacy caps the video's long side at 200px (see VIDEO_LONG_SIDE in

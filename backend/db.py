@@ -94,6 +94,7 @@ VIDEO_BENCHMARK_FIELDS = [
     "audio_input",
     "video_input",
     "text_prompt",
+    "expected_video_time_in_sec",
     "judging_criteria",
     "video_output",
     "score",
@@ -983,7 +984,7 @@ def _video_benchmark_payload(payload) -> dict:
     data = {}
     for field in VIDEO_BENCHMARK_FIELDS:
         value = getattr(payload, field, None)
-        if field.endswith("_id") or field == "score":
+        if field.endswith("_id") or field in {"score", "expected_video_time_in_sec"}:
             data[field] = value
         else:
             data[field] = "" if value is None else value
@@ -1016,7 +1017,8 @@ def create_video_benchmark_item(conn, payload) -> int:
             category_l1, category_l2, category_l3, category_definition,
             difficulty, scene, screen_size,
             character_image_asset, scene_image_asset, prop_image_asset,
-            audio_input, video_input, text_prompt, judging_criteria, video_output, score,
+            audio_input, video_input, text_prompt, expected_video_time_in_sec,
+            judging_criteria, video_output, score,
             character_image_id, scene_image_id, prop_image_id, audio_input_id,
             video_input_id, video_output_id,
             created_at, updated_at
@@ -1026,7 +1028,8 @@ def create_video_benchmark_item(conn, payload) -> int:
             %(category_l1)s, %(category_l2)s, %(category_l3)s, %(category_definition)s,
             %(difficulty)s, %(scene)s, %(screen_size)s,
             %(character_image_asset)s, %(scene_image_asset)s, %(prop_image_asset)s,
-            %(audio_input)s, %(video_input)s, %(text_prompt)s, %(judging_criteria)s, %(video_output)s, %(score)s,
+            %(audio_input)s, %(video_input)s, %(text_prompt)s, %(expected_video_time_in_sec)s,
+            %(judging_criteria)s, %(video_output)s, %(score)s,
             %(character_image_id)s, %(scene_image_id)s, %(prop_image_id)s, %(audio_input_id)s,
             %(video_input_id)s, %(video_output_id)s,
             %(now)s, %(now)s
@@ -1063,6 +1066,7 @@ def update_video_benchmark_item(conn, item_id: int, payload) -> bool:
             audio_input = %(audio_input)s,
             video_input = %(video_input)s,
             text_prompt = %(text_prompt)s,
+            expected_video_time_in_sec = %(expected_video_time_in_sec)s,
             judging_criteria = %(judging_criteria)s,
             video_output = %(video_output)s,
             score = %(score)s,

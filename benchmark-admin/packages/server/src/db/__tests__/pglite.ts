@@ -19,6 +19,7 @@ const MIGRATION_FILES = [
   '0004_add_difficulty.sql',
   '0005_add_video_benchmark_categories.sql',
   '0006_merge_video_benchmark_categories.sql',
+  '0007_add_expected_video_time.sql',
 ];
 
 type TestDb = ReturnType<typeof drizzle<typeof schema>>;

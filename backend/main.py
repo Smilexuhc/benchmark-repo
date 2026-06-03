@@ -182,6 +182,7 @@ class VideoBenchmarkItemIn(BaseModel):
     audio_input: str = ""
     video_input: str = ""
     text_prompt: str = ""
+    expected_video_time_in_sec: Optional[int] = None
     judging_criteria: str = ""
     video_output: str = ""
     score: Optional[int] = None
@@ -203,6 +204,13 @@ class VideoBenchmarkItemIn(BaseModel):
     def validate_score(cls, value: Optional[int]) -> Optional[int]:
         if value is not None and not 0 <= value <= 5:
             raise ValueError("score must be between 0 and 5")
+        return value
+
+    @field_validator("expected_video_time_in_sec")
+    @classmethod
+    def validate_expected_video_time(cls, value: Optional[int]) -> Optional[int]:
+        if value is not None and value < 0:
+            raise ValueError("expected_video_time_in_sec must be greater than or equal to 0")
         return value
 
 

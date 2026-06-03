@@ -28,6 +28,7 @@ type ItemOverrides = Partial<{
   needsRevision: boolean;
   commentCount: number;
   screenSize: string;
+  expectedVideoTimeInSec: number | null;
   scene: string;
   characterImages: { id: number; mediaId: number; url: string }[];
   videoOutput: { id: number; mediaId: number; url: string }[];
@@ -67,6 +68,7 @@ function makeItem(
     textPrompt: overrides.textPrompt ?? '',
     judgingCriteria: overrides.judgingCriteria ?? '',
     score: overrides.score === undefined ? null : overrides.score,
+    expectedVideoTimeInSec: overrides.expectedVideoTimeInSec ?? null,
     needsRevision: overrides.needsRevision ?? false,
     commentCount: overrides.commentCount ?? 0,
     createdAt: new Date(),
@@ -201,6 +203,11 @@ describe('BenchmarkCard', () => {
     const wrapper = container.querySelector('video')?.parentElement;
     expect(wrapper?.getAttribute('style')).toContain('aspect-ratio');
     expect(wrapper?.getAttribute('style')).toContain('9 / 16');
+  });
+
+  it('shows expected video time in the output header', () => {
+    renderCard(makeItem({ expectedVideoTimeInSec: 75 }));
+    expect(screen.getByText('视频时长 1分15秒')).toBeInTheDocument();
   });
 });
 
