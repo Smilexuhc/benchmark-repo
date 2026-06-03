@@ -70,9 +70,11 @@ export function BenchmarkList() {
     {
       getNextPageParam: (lastPage: { nextCursor: number | null }) =>
         lastPage.nextCursor ?? undefined,
-      // benchmark.list items include presigned media URLs — a long staleTime
-      // avoids re-signing every refetch.
-      staleTime: 30 * 60_000,
+      // Was 30 min — long enough that a transient empty response (e.g. a
+      // post-deploy DB blip) would haunt the user for half an hour. Drop to
+      // 1 min so mount + visibility-change refetch picks up fresh data fast;
+      // presigned URLs are valid for ~1h so the re-sign cost stays low.
+      staleTime: 60_000,
     },
   );
 

@@ -54,12 +54,27 @@ function genreTag(genre: string | null | undefined): ReactNode {
   );
 }
 
+// A name that's actually a filename / UUID-like blob (asset migrated from
+// uploaded media that never had structured fields set) is worse than "(未命名)"
+// because the user expects a human-readable persona, not 36056b66928051efc69f8…png.
+function looksLikeFilename(s: string): boolean {
+  return /\.[a-z0-9]{2,5}$/i.test(s) || /^[0-9a-f]{16,}/i.test(s);
+}
+
+function displayName(persona: string | undefined | null, name: string | undefined | null): string {
+  const p = persona?.trim();
+  if (p) return p;
+  const n = name?.trim();
+  if (n && !looksLikeFilename(n)) return n;
+  return '(未命名)';
+}
+
 export function renderCharacterInfo(asset: CharacterCardData): ReactNode {
   const { data } = asset;
   return createElement(
     Fragment,
     null,
-    title(data.persona || asset.name || '(未命名)'),
+    title(displayName(data.persona, asset.name)),
     attrs([asset.era, data.type, data.gender, data.age].filter(Boolean).join(' · ')),
     infoRow('身材', data.body),
     infoRow('特征', data.features),

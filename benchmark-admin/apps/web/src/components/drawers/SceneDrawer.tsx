@@ -239,11 +239,13 @@ export function SceneDrawer({
   const isDeleted = ctx.asset?.deletedAt != null;
   const options = optionsQuery.data?.kind === 'scene' ? optionsQuery.data : undefined;
 
+  const editTitle = ctx.asset?.name?.trim() || '编辑场景';
+
   return (
-    <Drawer open onClose={onClose} title={ctx.isNew ? '新建场景' : '编辑场景'}>
+    <Drawer open onClose={onClose} title={ctx.isNew ? '新建场景' : editTitle}>
       <form className="space-y-6" onSubmit={form.handleSubmit(onSubmit)} noValidate>
         <Field
-          label="描述"
+          label="自由描述（用一段话描述场景）"
           trailing={
             <AiLink busy={ctx.extractFields.isPending} busyLabel="解析中…" onClick={handleExtract}>
               AI 填入字段
@@ -252,7 +254,7 @@ export function SceneDrawer({
         >
           <Textarea
             rows={4}
-            placeholder="粘贴一段自由文本描述…"
+            placeholder="例：一个仙气古风庭院，青石台面、朦胧纱幔……写完点「AI 填入字段」自动填下方各项"
             {...form.register('description')}
           />
         </Field>
@@ -308,7 +310,7 @@ export function SceneDrawer({
         </section>
 
         <Field
-          label="提示词"
+          label="英文生成提示词"
           trailing={
             <span className="flex items-center gap-3">
               <AiLink
@@ -316,7 +318,7 @@ export function SceneDrawer({
                 busyLabel="生成中…"
                 onClick={handleGeneratePrompt}
               >
-                AI 生成
+                AI 生成提示词
               </AiLink>
               <AiLink onClick={handleCopyPrompt} disabled={!form.watch('prompt')}>
                 复制
@@ -324,7 +326,12 @@ export function SceneDrawer({
             </span>
           }
         >
-          <Textarea rows={3} {...form.register('prompt')} />
+          <Textarea
+            rows={3}
+            placeholder="可手动填写，或点「AI 生成提示词」。有自由描述时按描述生成，否则按上方字段生成。"
+            className="font-mono text-xs"
+            {...form.register('prompt')}
+          />
         </Field>
 
         {ctx.aiError ? (
@@ -333,9 +340,9 @@ export function SceneDrawer({
           </p>
         ) : null}
 
-        <section aria-label="图像" className="space-y-2">
+        <section aria-label="图集" className="space-y-2">
           <div className="flex items-center justify-between">
-            <h3 className="text-sm font-medium">图像</h3>
+            <h3 className="text-sm font-medium">图集</h3>
             <div className="flex items-center gap-2">
               <Button
                 type="button"
