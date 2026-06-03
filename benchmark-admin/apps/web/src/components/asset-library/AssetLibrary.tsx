@@ -16,7 +16,6 @@ import { type AssetKind, buildServerFilters, useFilterFields, useFilters } from 
 // mount so the scroll-anchor + load-more wiring keeps working unchanged.
 const ROW_ESTIMATE_PX = 232;
 const ROW_GAP_PX = 12;
-const SCROLL_HEIGHT = 'calc(100vh - 260px)';
 const NEAR_BOTTOM_PX = 360;
 
 const KIND_LABEL: Record<AssetKind, string> = {
@@ -175,7 +174,7 @@ export function AssetLibrary({ kind, renderDrawer, renderInfo, renderExtra }: As
   const kindLabel = KIND_LABEL[kind];
 
   return (
-    <div className="grid grid-cols-[240px_1fr] gap-6">
+    <div className="grid h-full min-h-0 grid-cols-[220px_1fr] gap-4">
       <FilterPanel
         fields={filterFields}
         filters={filterState.filters}
@@ -187,8 +186,8 @@ export function AssetLibrary({ kind, renderDrawer, renderInfo, renderExtra }: As
         onReset={filterState.reset}
       />
 
-      <div>
-        <div className="-mx-5 mb-3 flex items-center gap-3 border-b border-[hsl(var(--border))] px-5 py-2.5">
+      <div className="flex h-full min-h-0 flex-col">
+        <div className="-mx-5 mb-3 flex shrink-0 items-center gap-3 border-b border-[hsl(var(--border))] px-5 py-2.5">
           <div className="flex-1" />
           <Input
             value={filterState.search}
@@ -211,34 +210,36 @@ export function AssetLibrary({ kind, renderDrawer, renderInfo, renderExtra }: As
           />
         </div>
 
-        {list.isError ? (
-          <p role="alert" className="text-sm text-[hsl(var(--destructive))]">
-            加载失败：{list.error.message}
-          </p>
-        ) : null}
+        <div className="flex min-h-0 flex-1 flex-col">
+          {list.isError ? (
+            <p role="alert" className="text-sm text-[hsl(var(--destructive))]">
+              加载失败：{list.error.message}
+            </p>
+          ) : null}
 
-        {items.length === 0 && !list.isPending ? (
-          <div className="rounded-lg border border-dashed border-[hsl(var(--border))] py-12 text-center text-sm text-[hsl(var(--muted-foreground))]">
-            暂无结果
-          </div>
-        ) : (
-          <VirtualizedCardList
-            items={items}
-            selectedIds={selectedIds}
-            selectMode={selectMode}
-            generatingIds={generatingIds}
-            renderInfo={renderInfo}
-            renderExtra={renderExtra}
-            onEdit={(id) => setDrawerId(id)}
-            onToggleSelect={toggleSelect}
-            onSetCover={handleSetCover}
-            onRegenerate={(asset) => handleRegenerate(asset)}
-            onDownload={handleDownload}
-            hasNextPage={list.hasNextPage ?? false}
-            isFetchingNextPage={list.isFetchingNextPage}
-            fetchNextPage={list.fetchNextPage}
-          />
-        )}
+          {items.length === 0 && !list.isPending ? (
+            <div className="rounded-lg border border-dashed border-[hsl(var(--border))] py-12 text-center text-sm text-[hsl(var(--muted-foreground))]">
+              暂无结果
+            </div>
+          ) : (
+            <VirtualizedCardList
+              items={items}
+              selectedIds={selectedIds}
+              selectMode={selectMode}
+              generatingIds={generatingIds}
+              renderInfo={renderInfo}
+              renderExtra={renderExtra}
+              onEdit={(id) => setDrawerId(id)}
+              onToggleSelect={toggleSelect}
+              onSetCover={handleSetCover}
+              onRegenerate={(asset) => handleRegenerate(asset)}
+              onDownload={handleDownload}
+              hasNextPage={list.hasNextPage ?? false}
+              isFetchingNextPage={list.isFetchingNextPage}
+              fetchNextPage={list.fetchNextPage}
+            />
+          )}
+        </div>
       </div>
 
       {drawerId !== null && renderDrawer ? (
@@ -329,7 +330,7 @@ function VirtualizedCardList({
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   return (
-    <div ref={scrollRef} className="overflow-auto pr-1" style={{ height: SCROLL_HEIGHT }}>
+    <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto pr-1">
       <div
         // biome-ignore lint/a11y/useSemanticElements: virtualizer needs an absolutely-positioned div; role conveys list semantics
         role="list"
