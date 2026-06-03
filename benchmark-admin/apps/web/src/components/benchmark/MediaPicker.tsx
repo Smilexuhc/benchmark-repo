@@ -154,13 +154,10 @@ export function MediaPicker({
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
-        <div className="text-sm font-medium">
-          {label}
-          {multi ? ' (可多选)' : ''}
-        </div>
+        <div className="text-sm font-medium">{label}</div>
         <div className="flex gap-1">
           <Button type="button" size="sm" variant="outline" onClick={() => setOpen(true)}>
-            选择素材 ({selectedIds.length})
+            选择素材
           </Button>
           <Button
             type="button"
@@ -181,10 +178,15 @@ export function MediaPicker({
           />
         </div>
       </div>
-      {/* Selected media strip: thumbnail + filename + click-to-preview + ×.
-          Matches legacy `frontend/src/components/BenchmarkItemDrawer.tsx`
-          MediaPicker rendering (see screenshot in BEN-5 round 12). */}
+      {/* Selected media tiles. Legacy shape (frontend/src/components/BenchmarkItemDrawer.tsx):
+          126px-wide tile, 80×52 landscape thumbnail on top, filename below.
+          Empty state shows "未选择". Click thumbnail → preview (lightbox /
+          new-tab for audio/video). No × button — deselect happens via the
+          picker modal (legacy doesn't render one either). */}
       <div className="flex flex-wrap gap-2">
+        {selected.length === 0 && selectedIds.length === 0 ? (
+          <span className="text-xs text-[hsl(var(--muted-foreground))]">未选择</span>
+        ) : null}
         {selected.map((it: MediaItem) => {
           const fileName =
             it.title?.trim() || (it.objectKey?.split('/').pop() ?? `media-${it.id}`);
@@ -203,10 +205,7 @@ export function MediaPicker({
             }
           }
           return (
-            <div
-              key={it.id}
-              className="flex max-w-[260px] items-center gap-2 rounded border border-[hsl(var(--border))] p-1"
-            >
+            <div key={it.id} className="w-[126px]">
               <button
                 type="button"
                 ref={(el) => {
@@ -215,30 +214,26 @@ export function MediaPicker({
                 onClick={preview}
                 aria-label={`预览 ${fileName}`}
                 title={fileName}
-                className="block shrink-0 focus:outline-none focus:ring-2 focus:ring-[hsl(var(--ring))]"
+                className="block h-[52px] w-[80px] overflow-hidden rounded bg-[hsl(var(--muted))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--ring))]"
               >
                 {isImage ? (
-                  <LazyImage src={it.url} alt={fileName} className="h-10 w-10 rounded" />
+                  <LazyImage
+                    src={it.url}
+                    alt={fileName}
+                    className="h-full w-full object-cover"
+                  />
                 ) : (
-                  <span className="flex h-10 w-10 items-center justify-center rounded bg-[hsl(var(--muted))] text-[10px] text-[hsl(var(--muted-foreground))]">
-                    {mediaType === 'audio' ? '音频' : '视频'}
+                  <span className="flex h-full w-full items-center justify-center text-[11px] text-[hsl(var(--muted-foreground))]">
+                    {mediaType === 'audio' ? 'AUDIO' : 'VIDEO'}
                   </span>
                 )}
               </button>
-              <span
-                className="min-w-0 flex-1 truncate text-xs text-[hsl(var(--foreground))]"
+              <div
+                className="mt-1 truncate text-xs text-[hsl(var(--foreground))]"
                 title={fileName}
               >
                 {fileName}
-              </span>
-              <button
-                type="button"
-                className="shrink-0 px-1 text-xs text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--destructive))]"
-                onClick={() => toggle(it.id)}
-                aria-label={`移除 ${fileName}`}
-              >
-                ×
-              </button>
+              </div>
             </div>
           );
         })}
