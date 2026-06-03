@@ -256,36 +256,41 @@ function LightboxView({
         </Button>
       </div>
 
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-center gap-4 p-4">
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={onPrev}
-          disabled={index === 0}
-          aria-label="上一张"
-          className={cn(
-            'pointer-events-auto text-white hover:bg-white/10 hover:text-white',
-            index === 0 && 'opacity-40',
-          )}
+      {/* Side arrows + bottom counter, matching legacy AntD Image.PreviewGroup
+          shape (left arrow on the left edge, right arrow on the right edge,
+          both vertically centered). */}
+      <button
+        type="button"
+        onClick={onPrev}
+        disabled={index === 0}
+        aria-label="上一张"
+        className={cn(
+          'pointer-events-auto absolute left-4 top-1/2 z-10 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/40 text-2xl leading-none text-white transition hover:bg-black/60',
+          index === 0 && 'cursor-not-allowed opacity-30 hover:bg-black/40',
+        )}
+      >
+        ‹
+      </button>
+      <button
+        type="button"
+        onClick={onNext}
+        disabled={index === total - 1}
+        aria-label="下一张"
+        className={cn(
+          'pointer-events-auto absolute right-4 top-1/2 z-10 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/40 text-2xl leading-none text-white transition hover:bg-black/60',
+          index === total - 1 && 'cursor-not-allowed opacity-30 hover:bg-black/40',
+        )}
+      >
+        ›
+      </button>
+
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-center p-4">
+        <span
+          className="pointer-events-auto rounded-full bg-black/40 px-3 py-1 text-sm text-white tabular-nums"
+          aria-label="counter"
         >
-          ‹
-        </Button>
-        <span className="pointer-events-auto text-sm text-white tabular-nums" aria-label="counter">
-          {index + 1}/{total}
+          {index + 1} / {total}
         </span>
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={onNext}
-          disabled={index === total - 1}
-          aria-label="下一张"
-          className={cn(
-            'pointer-events-auto text-white hover:bg-white/10 hover:text-white',
-            index === total - 1 && 'opacity-40',
-          )}
-        >
-          ›
-        </Button>
       </div>
     </div>
   );
