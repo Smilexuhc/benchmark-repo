@@ -8,7 +8,9 @@ export type FilterPanelProps = {
   fields: FilterField[];
   filters: AssetFilters;
   deletedOnly: boolean;
-  hitCount: number;
+  // null = still loading the first page; render an ellipsis so we don't flash
+  // "命中 0 个" (BEN-5 round 9 user-reported on slow scenes load).
+  hitCount: number | null;
   activeFilterCount: number;
   onFilterChange: <K extends keyof AssetFilters>(key: K, value: string[]) => void;
   onDeletedOnlyChange: (value: boolean) => void;
@@ -50,7 +52,7 @@ export function FilterPanel({
         </button>
       </div>
       <div className="text-xs text-[hsl(var(--muted-foreground))]">
-        命中 {hitCount} 个
+        命中 {hitCount ?? '…'} 个
       </div>
 
       {fields.map((field) => (
