@@ -69,9 +69,14 @@ export function renderCharacterInfo(asset: CharacterCardData): ReactNode {
 
 export function renderSceneInfo(asset: SceneCardData): ReactNode {
   const { data } = asset;
-  // `关键元素` was missed in the prior admin port — it lives in `data.elements`
-  // as an array; legacy joined it with `, ` for display.
-  const elements = (data.elements ?? []).filter(Boolean).join(', ');
+  // `关键元素` lives in `data.elements`. Legacy stores it as a plain string;
+  // the admin schema declared it as `string[]`, so rows migrated from legacy
+  // arrive as strings while newer rows may be arrays. Tolerate both.
+  const raw = data.elements as unknown;
+  const elements =
+    typeof raw === 'string' ? raw
+    : Array.isArray(raw) ? raw.filter(Boolean).join(', ')
+    : '';
   return createElement(
     Fragment,
     null,
@@ -88,7 +93,7 @@ export function renderPropInfo(asset: PropCardData): ReactNode {
   return createElement(
     Fragment,
     null,
-    title(asset.name || '(未命名道具)'),
+    title(asset.name || '(未命名)'),
     genreTag(asset.data.category ?? null),
   );
 }

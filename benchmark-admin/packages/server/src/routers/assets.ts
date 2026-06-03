@@ -35,23 +35,15 @@ async function fetchAssetWithImages(id: number) {
   return { ...asset, images: imagesWithUrls, coverImageId: asset.coverImageId ?? null };
 }
 
-// List payloads only render the cover image per asset (AssetCard picks
-// `images.find(id===coverImageId) ?? images[0]`). Returning every media
-// row + presigning every URL inflates payloads and signs N URLs per card when
-// exactly one is needed. Detail fetches still go through `fetchAssetWithImages`
-// and keep the full image set.
+// List payloads return every alive image per asset. The card needs them for
+// the "共 N 张" count + lightbox prev/next; presigning N URLs per page (≈ 3×
+// page size in practice) is acceptable for the workload. Detail fetches still
+// go through `fetchAssetWithImages` for the per-asset detail view.
 async function fetchPageWithCoverImage(ids: number[]) {
   if (ids.length === 0) return [];
 
   const assetRows = await db.select().from(assets).where(inArray(assets.id, ids));
 
-  // Single-pass derived cover. Fetch every alive image for the page's assets in
-  // one query (id ascending), then per asset choose: the explicit cover if it is
-  // still alive, otherwise the lowest-id alive image (matches AssetCard's
-  // `images[0]` fallback). Deriving from the live set — rather than bucketing on
-  // coverImageId up front — is what fixes the soft-deleted-cover blank card: a
-  // dangling cover pointer no longer suppresses the fallback, because we never
-  // trust the pointer without confirming the row is alive.
   const imageRows =
     assetRows.length > 0
       ? await db
@@ -61,40 +53,17 @@ async function fetchPageWithCoverImage(ids: number[]) {
           .orderBy(media.id)
       : [];
 
-  const coverPointerByAssetId = new Map<number, number>();
-  for (const a of assetRows) {
-    if (a.coverImageId !== null && a.coverImageId !== undefined) {
-      coverPointerByAssetId.set(a.id, a.coverImageId);
-    }
-  }
-
-  // imageRows are asset-bound (queried by media.assetId) and ordered by id asc,
-  // so assetId is non-null and the first row seen per asset is its lowest-id
-  // alive image. An alive image matching the explicit cover pointer always wins;
-  // otherwise the lowest-id alive image is the fallback. Iterating ascending,
-  // a later (higher-id) row can never displace either choice.
-  const coverByAssetId = new Map<number, typeof media.$inferSelect>();
-  for (const img of imageRows) {
-    if (img.assetId === null) continue;
-    const pointer = coverPointerByAssetId.get(img.assetId);
-    const existing = coverByAssetId.get(img.assetId);
-    if (pointer !== undefined && img.id === pointer) {
-      coverByAssetId.set(img.assetId, img); // explicit cover, still alive → wins
-    } else if (!existing) {
-      coverByAssetId.set(img.assetId, img); // first (lowest-id) alive fallback
-    }
-  }
-
-  const selected = [...coverByAssetId.values()];
+  // Presign every alive image once, in parallel.
   const urls = await Promise.all(
-    selected.map((img) => storage.getPresignedUrl(img.objectKey).catch(() => '')),
+    imageRows.map((img) => storage.getPresignedUrl(img.objectKey).catch(() => '')),
   );
-  const imageWithUrlByAssetId = new Map<number, (typeof selected)[number] & { url: string }>();
-  selected.forEach((img, i) => {
-    const url = urls[i];
-    if (url !== undefined && img.assetId !== null) {
-      imageWithUrlByAssetId.set(img.assetId, { ...img, url });
-    }
+  const imagesByAssetId = new Map<number, Array<(typeof imageRows)[number] & { url: string }>>();
+  imageRows.forEach((img, i) => {
+    if (img.assetId === null) return;
+    const url = urls[i] ?? '';
+    const arr = imagesByAssetId.get(img.assetId) ?? [];
+    arr.push({ ...img, url });
+    imagesByAssetId.set(img.assetId, arr);
   });
 
   // Preserve the order of ids (for cursor pagination ordering)
@@ -103,10 +72,9 @@ async function fetchPageWithCoverImage(ids: number[]) {
     .map((id) => {
       const asset = assetMap.get(id);
       if (!asset) return null;
-      const cover = imageWithUrlByAssetId.get(id);
       return {
         ...asset,
-        images: cover ? [cover] : [],
+        images: imagesByAssetId.get(id) ?? [],
         coverImageId: asset.coverImageId ?? null,
       };
     })

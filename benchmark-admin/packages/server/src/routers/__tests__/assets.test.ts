@@ -362,8 +362,8 @@ describe('assetsRouter', () => {
     });
   });
 
-  describe('list payload trimming', () => {
-    it('list returns only the cover image per asset while get returns all images', async () => {
+  describe('list payload images', () => {
+    it('list returns every alive image per asset so the card can count + cycle', async () => {
       const asset = await caller.assets.create({
         kind: 'character',
         name: 'ManyImagesAsset',
@@ -385,22 +385,21 @@ describe('assetsRouter', () => {
       const { items } = await caller.assets.list({ kind: 'character' });
       const listed = items.find((i: { id: number }) => i.id === asset.id);
       expect(listed).toBeDefined();
-      expect(listed.images).toHaveLength(1);
-      expect(listed.images[0].id).toBe(attached[2].id);
+      expect(listed.images).toHaveLength(5);
       expect(listed.coverImageId).toBe(attached[2].id);
 
       const fetched = await caller.assets.get({ id: asset.id });
       expect(fetched.images).toHaveLength(5);
     });
 
-    it('list falls back to the lowest-id image when no cover is set', async () => {
+    it('list still returns all images when no cover is set; coverImageId is null', async () => {
       const asset = await caller.assets.create({
         kind: 'prop',
         name: 'NoCoverAsset',
         data: {},
       });
 
-      const first = await caller.assets.attachImage({
+      await caller.assets.attachImage({
         id: asset.id,
         objectKey: 'images/no-cover-1-abc123def456789012345678901234.png',
         source: 'generated',
@@ -414,8 +413,7 @@ describe('assetsRouter', () => {
       const { items } = await caller.assets.list({ kind: 'prop' });
       const listed = items.find((i: { id: number }) => i.id === asset.id);
       expect(listed.coverImageId).toBeNull();
-      expect(listed.images).toHaveLength(1);
-      expect(listed.images[0].id).toBe(first.id);
+      expect(listed.images).toHaveLength(2);
     });
   });
 });

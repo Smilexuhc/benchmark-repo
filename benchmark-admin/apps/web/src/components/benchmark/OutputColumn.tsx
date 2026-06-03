@@ -91,7 +91,18 @@ export function OutputColumn({ item, className }: OutputColumnProps) {
         {MODEL_NAME}
       </div>
 
-      <div className="overflow-hidden rounded bg-black" style={{ aspectRatio: aspect }}>
+      {/* Legacy caps the video's long side at 200px (see VIDEO_LONG_SIDE in
+          frontend/src/components/BenchmarkItemsPage.tsx). For 9:16 portrait,
+          the long side is height; for everything else (16:9, 2.39:1), the
+          long side is width. */}
+      <div
+        className="overflow-hidden rounded bg-black"
+        style={
+          aspect === '9 / 16'
+            ? { aspectRatio: aspect, height: 200, width: 'auto' }
+            : { aspectRatio: aspect, width: 200, height: 'auto' }
+        }
+      >
         {videoUrl ? (
           <OutputVideo url={videoUrl} />
         ) : (

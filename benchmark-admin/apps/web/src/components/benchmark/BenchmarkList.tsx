@@ -145,13 +145,6 @@ export function BenchmarkList() {
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
-        <Input
-          aria-label="搜索"
-          placeholder="搜索全部字段…"
-          className="max-w-xs"
-          value={state.search}
-          onChange={(e) => setState({ search: e.target.value })}
-        />
         <Cascader
           ariaLabel="分类"
           placeholder="分类"
@@ -231,9 +224,9 @@ export function BenchmarkList() {
           待修改
         </label>
         <Input
-          aria-label="人工标注"
-          placeholder="人工标注…"
-          className="max-w-[160px]"
+          aria-label="搜索测试点人工标注"
+          placeholder="搜索测试点人工标注"
+          className="max-w-[200px]"
           value={state.manualTag}
           onChange={(e) => setState({ manualTag: e.target.value })}
         />
