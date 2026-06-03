@@ -260,7 +260,10 @@ export function CharacterDrawer({
           />
         </Field>
 
-        {/* Section 2 — structured fields */}
+        {/* Section 2 — structured fields. Order mirrors legacy CharacterDrawer
+            SELECT_FIELDS exactly: 时代 / 类型 / 性别 / 年龄段 / 常见题材.
+            The DB `name` column auto-fills from `persona` in buildPayload, so
+            we don't surface a separate 名称 input — legacy doesn't either. */}
         <section className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <Field label="时代">
@@ -269,14 +272,7 @@ export function CharacterDrawer({
                 onChange={(v) => form.setValue('era', v, { shouldDirty: true })}
                 options={options?.era ?? []}
                 aria-label="时代"
-              />
-            </Field>
-            <Field label="题材">
-              <AutoComplete
-                value={form.watch('genre') ?? ''}
-                onChange={(v) => form.setValue('genre', v, { shouldDirty: true })}
-                options={options?.genre ?? []}
-                aria-label="题材"
+                placeholder="选择或输入时代"
               />
             </Field>
             <Field label="类型">
@@ -285,6 +281,7 @@ export function CharacterDrawer({
                 onChange={(v) => form.setValue('type', v, { shouldDirty: true })}
                 options={options?.type ?? []}
                 aria-label="类型"
+                placeholder="选择或输入类型"
               />
             </Field>
             <Field label="性别">
@@ -293,29 +290,37 @@ export function CharacterDrawer({
                 onChange={(v) => form.setValue('gender', v, { shouldDirty: true })}
                 options={options?.gender ?? []}
                 aria-label="性别"
+                placeholder="选择或输入性别"
               />
             </Field>
-            <Field label="年龄">
+            <Field label="年龄段">
               <AutoComplete
                 value={form.watch('age') ?? ''}
                 onChange={(v) => form.setValue('age', v, { shouldDirty: true })}
                 options={options?.age ?? []}
-                aria-label="年龄"
+                aria-label="年龄段"
+                placeholder="选择或输入年龄段"
+              />
+            </Field>
+            <Field label="常见题材">
+              <AutoComplete
+                value={form.watch('genre') ?? ''}
+                onChange={(v) => form.setValue('genre', v, { shouldDirty: true })}
+                options={options?.genre ?? []}
+                aria-label="常见题材"
+                placeholder="选择或输入常见题材"
               />
             </Field>
           </div>
 
-          <Field label="人设" required error={form.formState.errors.persona?.message}>
-            <Textarea rows={2} {...form.register('persona')} />
+          <Field label="人设/服装造型" required error={form.formState.errors.persona?.message}>
+            <Textarea rows={2} {...form.register('persona')} placeholder="输入人设/服装造型" />
           </Field>
-          <Field label="名称">
-            <Input {...form.register('name')} placeholder="留空则使用人设作为名称" />
-          </Field>
-          <Field label="体型">
-            <Input {...form.register('body')} />
+          <Field label="身材">
+            <Input {...form.register('body')} placeholder="输入身材" />
           </Field>
           <Field label="特征">
-            <Textarea rows={2} {...form.register('features')} />
+            <Textarea rows={2} {...form.register('features')} placeholder="输入特征" />
           </Field>
         </section>
 

@@ -243,7 +243,7 @@ export function BenchmarkDrawer({ id, onClose, onSaved }: BenchmarkDrawerProps) 
       open
       onClose={onClose}
       title={isNew ? '新建题目' : `编辑题目 #${id}`}
-      widthClassName="w-[720px] max-w-full"
+      widthClassName="w-[760px] max-w-full"
     >
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4" noValidate>
         {missing.length > 0 ? (

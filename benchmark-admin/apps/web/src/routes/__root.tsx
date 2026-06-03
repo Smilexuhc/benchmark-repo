@@ -74,7 +74,7 @@ function RootContent() {
         <header className="flex items-center justify-between border-b border-[hsl(var(--border))] bg-[hsl(var(--background))] px-6 py-3">
           <div className="flex items-center gap-6">
             <Link to="/" className="text-base font-semibold tracking-tight">
-              Benchmark Admin
+              资产库
             </Link>
             {/* The per-route Segmented tabs in (assets)/__layout own the asset/benchmark
                 navigation, matching legacy's single-strip header. */}
@@ -93,7 +93,7 @@ function RootContent() {
             </Button>
           </div>
         </header>
-        <main className="flex-1 px-6 py-6">
+        <main className="flex-1 px-5 py-4">
           <Outlet />
         </main>
       </div>

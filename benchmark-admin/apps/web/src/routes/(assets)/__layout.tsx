@@ -21,10 +21,11 @@ export function AssetsLayout({ children }: AssetsLayoutProps) {
   const current = (TABS.find((t) => pathname === t.value || pathname.startsWith(`${t.value}/`))
     ?.value ?? '/characters') as AssetTab;
 
+  // No section title here — the global header already says "资产库" (matches
+  // legacy frontend/src/App.tsx's single 56px header with title + Segmented).
   return (
     <section>
-      <header className="mb-4 flex items-center gap-4">
-        <h1 className="text-xl font-semibold tracking-tight">资产库</h1>
+      <header className="mb-3 flex items-center gap-4">
         <Segmented<AssetTab>
           value={current}
           items={TABS}
