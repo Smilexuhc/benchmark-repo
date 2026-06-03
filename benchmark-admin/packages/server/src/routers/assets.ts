@@ -1,5 +1,5 @@
 import { TRPCError } from '@trpc/server';
-import { type SQL, and, desc, eq, inArray, isNotNull, isNull, lt, sql } from 'drizzle-orm';
+import { type SQL, and, eq, gt, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { assets, media } from '@benchmark-admin/shared/db/schema';
 import {
@@ -270,16 +270,21 @@ export const assetsRouter = t.router({
         .where(baseWhere);
       const total = totalRow[0]?.total ?? 0;
 
+      // Legacy parity (backend/db.py list_assets): `ORDER BY id` ASC. This
+      // surfaces seeded characters (with proper personas like 草原雄狮 / 北极熊)
+      // ahead of recent uploads (which often have no persona and a UUID/filename
+      // for `name`). Cursor walks forward via `id > cursor`; nextCursor is the
+      // last (largest) id on the page.
       const pageConditions = [...baseConditions];
       if (input.cursor) {
-        pageConditions.push(lt(assets.id, input.cursor));
+        pageConditions.push(gt(assets.id, input.cursor));
       }
 
       const rows = await db
         .select({ id: assets.id })
         .from(assets)
         .where(and(...pageConditions))
-        .orderBy(desc(assets.id))
+        .orderBy(assets.id)
         .limit(LIMIT + 1);
 
       const hasMore = rows.length > LIMIT;
