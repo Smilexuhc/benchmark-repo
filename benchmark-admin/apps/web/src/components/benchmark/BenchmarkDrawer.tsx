@@ -251,53 +251,64 @@ export function BenchmarkDrawer({ id, onClose, onSaved }: BenchmarkDrawerProps) 
             缺少: {missing.join(' / ')}（可继续保存为草稿）
           </output>
         ) : null}
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="镜头类型">
-            <Select {...form.register('shotType')}>
-              <option value="">—</option>
-              {SHOT_TYPES.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          <Field label="题目类型">
-            <Select {...form.register('questionType')} disabled={!shotType}>
-              <option value="">—</option>
-              {QUESTION_TYPES.map((q) => (
-                <option key={q} value={q}>
-                  {q}
-                </option>
-              ))}
-            </Select>
-          </Field>
-        </div>
-
-        <section
-          aria-label="新分类"
-          className="space-y-3 rounded-md border border-[hsl(var(--border))] p-3"
-        >
-          <h3 className="text-sm font-semibold">新分类</h3>
-          <Field label="分类">
-            <Cascader
-              ariaLabel="分类"
-              placeholder="选择分类…"
-              options={cascaderOptions}
-              value={cascaderValue}
-              onChange={(path) => selectCategoryPath(path)}
+        {/* Order mirrors legacy frontend/src/components/BenchmarkItemDrawer.tsx:
+            新分类 (Cascader, full width) → category_definition (readonly when set) →
+            测试点人工标注 (with difficulty Select inline on the left) →
+            场景 + 屏幕尺寸 → 文字提示词 → 媒体 → 评分 → 评判标准.
+            Legacy doesn't surface 镜头类型 / 题目类型 in the drawer — those
+            are list-filter fields backed by the same V3 category dimension. */}
+        <Field label="新分类">
+          <Cascader
+            ariaLabel="新分类"
+            placeholder="依次选择 一级分类 → 二级分类 → 三级分类"
+            options={cascaderOptions}
+            value={cascaderValue}
+            onChange={(path) => selectCategoryPath(path)}
+          />
+        </Field>
+        {categoryDefinition ? (
+          <Field label="出题意图">
+            <Textarea
+              rows={2}
+              value={categoryDefinition}
+              readOnly
+              className="bg-[hsl(var(--muted))]"
             />
           </Field>
-          {categoryDefinition ? (
-            <p className="text-xs text-[hsl(var(--muted-foreground))]">
-              出题意图：{categoryDefinition}
-            </p>
-          ) : null}
-        </section>
+        ) : null}
+
+        <Field label="测试点人工标注">
+          <div className="flex items-center gap-2">
+            <Select
+              value={form.watch('difficulty')}
+              onChange={(e) =>
+                form.setValue('difficulty', e.target.value as '' | '易' | '中' | '难', {
+                  shouldDirty: true,
+                })
+              }
+              aria-label="难度"
+              className="w-[82px] shrink-0"
+            >
+              {DIFFICULTY_OPTIONS.map((v) => (
+                <option key={v || 'none'} value={v}>
+                  {v || '难度'}
+                </option>
+              ))}
+            </Select>
+            <Input {...form.register('manualTag')} className="flex-1" />
+          </div>
+        </Field>
 
         <div className="grid grid-cols-2 gap-3">
-          <Field label="测试点人工标注">
-            <Input {...form.register('manualTag')} />
+          <Field label="场景">
+            <Select {...form.register('scene')}>
+              <option value="">—</option>
+              {SCENE_OPTIONS.map((v) => (
+                <option key={v} value={v}>
+                  {v}
+                </option>
+              ))}
+            </Select>
           </Field>
           <Field label="屏幕尺寸">
             <Select {...form.register('screenSize')}>
@@ -310,32 +321,9 @@ export function BenchmarkDrawer({ id, onClose, onSaved }: BenchmarkDrawerProps) 
             </Select>
           </Field>
         </div>
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="场景">
-            <Select {...form.register('scene')}>
-              <option value="">—</option>
-              {SCENE_OPTIONS.map((v) => (
-                <option key={v} value={v}>
-                  {v}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          <Field label="难度">
-            <Select {...form.register('difficulty')}>
-              {DIFFICULTY_OPTIONS.map((v) => (
-                <option key={v || 'none'} value={v}>
-                  {v || '—'}
-                </option>
-              ))}
-            </Select>
-          </Field>
-        </div>
+
         <Field label="文字提示词">
           <Textarea rows={3} {...form.register('textPrompt')} />
-        </Field>
-        <Field label="评判标准">
-          <Textarea rows={2} {...form.register('judgingCriteria')} />
         </Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label="评分（0–5）">
@@ -420,6 +408,10 @@ export function BenchmarkDrawer({ id, onClose, onSaved }: BenchmarkDrawerProps) 
             onChange={(ids) => setMedia((m) => ({ ...m, videoOutputIds: ids }))}
           />
         </section>
+
+        <Field label="评判标准">
+          <Textarea rows={2} {...form.register('judgingCriteria')} />
+        </Field>
 
         {!isNew ? <BenchmarkComments itemId={id} /> : null}
 

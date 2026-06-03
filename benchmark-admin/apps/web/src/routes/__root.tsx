@@ -3,7 +3,16 @@ import { useEffect } from 'react';
 import { ConfirmHost, Toaster } from '@/components/feedback';
 import { Button } from '@/components/ui/button';
 import { LightboxProvider } from '@/components/ui/lightbox';
-import { useAuthActions, useSession } from '@/lib/auth-client';
+import { Segmented } from '@/components/ui/segmented';
+import { useSession } from '@/lib/auth-client';
+
+type AssetTab = '/characters' | '/scenes' | '/props' | '/benchmark';
+const TABS: readonly { value: AssetTab; label: string }[] = [
+  { value: '/characters', label: '角色资产库' },
+  { value: '/scenes', label: '场景资产库' },
+  { value: '/props', label: '道具资产库' },
+  { value: '/benchmark', label: '题目' },
+];
 
 function RootLayout() {
   return (
@@ -19,7 +28,6 @@ function RootContent() {
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const session = useSession();
-  const { logout } = useAuthActions();
 
   const isLoginRoute = pathname === '/login';
   const isAuthed = session.data != null;
@@ -68,32 +76,26 @@ function RootContent() {
     );
   }
 
+  const currentTab = (TABS.find((t) => pathname === t.value || pathname.startsWith(`${t.value}/`))
+    ?.value ?? '/characters') as AssetTab;
+
   return (
     <LightboxProvider>
-      <div className="flex min-h-full flex-col">
-        <header className="flex items-center justify-between border-b border-[hsl(var(--border))] bg-[hsl(var(--background))] px-6 py-3">
-          <div className="flex items-center gap-6">
-            <Link to="/" className="text-base font-semibold tracking-tight">
-              资产库
-            </Link>
-            {/* The per-route Segmented tabs in (assets)/__layout own the asset/benchmark
-                navigation, matching legacy's single-strip header. */}
-          </div>
-          <div className="flex items-center gap-3 text-sm text-[hsl(var(--muted-foreground))]">
-            <span aria-label="signed in user">{session.data?.email}</span>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={async () => {
-                await logout();
-                navigate({ to: '/login', replace: true });
-              }}
-            >
-              退出登录
-            </Button>
-          </div>
+      <div className="flex h-screen flex-col overflow-hidden">
+        {/* Single 56px header matching legacy: 资产库 + Segmented in one row.
+            No email / logout — user asked to remove (BEN-5 round 7). */}
+        <header className="flex h-14 shrink-0 items-center gap-5 border-b border-[hsl(var(--border))] bg-[hsl(var(--background))] px-5">
+          <Link to="/" className="text-base font-semibold tracking-tight">
+            资产库
+          </Link>
+          <Segmented<AssetTab>
+            value={currentTab}
+            items={TABS}
+            onChange={(to) => navigate({ to })}
+            ariaLabel="资产库分类"
+          />
         </header>
-        <main className="flex-1 px-5 py-4">
+        <main className="min-h-0 flex-1 overflow-hidden">
           <Outlet />
         </main>
       </div>

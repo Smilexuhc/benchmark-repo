@@ -227,22 +227,24 @@ export function PropDrawer({
   return (
     <Drawer open onClose={onClose} title={ctx.isNew ? '新建道具' : editTitle}>
       <form className="space-y-6" onSubmit={form.handleSubmit(onSubmit)} noValidate>
-        {/* Legacy field order (frontend/src/components/PropDrawer.tsx):
-            名称 → 类别 → 自由描述（用于 AI 写提示词）→ 提示词 → 图像。
-            Admin keeps `era` and `genre` columns in the DB but doesn't
-            surface them in the drawer — legacy doesn't either. */}
-        <Field label="名称" required error={form.formState.errors.name?.message}>
-          <Input {...form.register('name')} placeholder="输入道具名称" />
-        </Field>
-
-        <Field label="类别">
-          <AutoComplete
-            value={form.watch('category') ?? ''}
-            onChange={(v) => form.setValue('category', v, { shouldDirty: true })}
-            options={options?.category ?? []}
-            aria-label="类别"
-          />
-        </Field>
+        {/* Legacy frontend/src/components/PropDrawer.tsx puts 名称 + 类别 on a
+            single row via 2-col grid. Admin used to stack them — fixed here.
+            era / genre columns stay in the DB but are not surfaced (legacy
+            never had them in the prop form). */}
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="名称" required error={form.formState.errors.name?.message}>
+            <Input {...form.register('name')} placeholder="输入道具名称" />
+          </Field>
+          <Field label="类别">
+            <AutoComplete
+              value={form.watch('category') ?? ''}
+              onChange={(v) => form.setValue('category', v, { shouldDirty: true })}
+              options={options?.category ?? []}
+              aria-label="类别"
+              placeholder="选择或输入类别"
+            />
+          </Field>
+        </div>
 
         <Field
           label="自由描述（可选，用于 AI 写提示词）"
@@ -252,7 +254,11 @@ export function PropDrawer({
             </AiLink>
           }
         >
-          <Textarea rows={4} {...form.register('description')} />
+          <Textarea
+            rows={3}
+            placeholder="例：一个棕色真皮公文包，黄铜锁扣……写完点「AI 生成提示词」"
+            {...form.register('description')}
+          />
         </Field>
 
         <Field
