@@ -257,6 +257,8 @@ export function SceneDrawer({
           />
         </Field>
 
+        {/* Order mirrors legacy SceneDrawer SELECT_FIELDS exactly:
+            时代 / 场景类型 / 常见题材 / 氛围时段, then 场景名称, 关键元素. */}
         <section className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <Field label="时代">
@@ -265,6 +267,7 @@ export function SceneDrawer({
                 onChange={(v) => form.setValue('era', v, { shouldDirty: true })}
                 options={options?.era ?? []}
                 aria-label="时代"
+                placeholder="选择或输入时代"
               />
             </Field>
             <Field label="场景类型">
@@ -273,6 +276,16 @@ export function SceneDrawer({
                 onChange={(v) => form.setValue('scene_type', v, { shouldDirty: true })}
                 options={options?.scene_type ?? []}
                 aria-label="场景类型"
+                placeholder="选择或输入场景类型"
+              />
+            </Field>
+            <Field label="常见题材">
+              <AutoComplete
+                value={form.watch('genre') ?? ''}
+                onChange={(v) => form.setValue('genre', v, { shouldDirty: true })}
+                options={options?.genre ?? []}
+                aria-label="常见题材"
+                placeholder="选择或输入常见题材"
               />
             </Field>
             <Field label="氛围时段">
@@ -281,23 +294,16 @@ export function SceneDrawer({
                 onChange={(v) => form.setValue('mood', v, { shouldDirty: true })}
                 options={options?.mood ?? []}
                 aria-label="氛围时段"
-              />
-            </Field>
-            <Field label="题材">
-              <AutoComplete
-                value={form.watch('genre') ?? ''}
-                onChange={(v) => form.setValue('genre', v, { shouldDirty: true })}
-                options={options?.genre ?? []}
-                aria-label="题材"
+                placeholder="选择或输入氛围时段"
               />
             </Field>
           </div>
 
-          <Field label="名称" required error={form.formState.errors.name?.message}>
-            <Input {...form.register('name')} />
+          <Field label="场景名称" required error={form.formState.errors.name?.message}>
+            <Input {...form.register('name')} placeholder="输入场景名称" />
           </Field>
-          <Field label="元素（逗号分隔）">
-            <Input {...form.register('elements')} />
+          <Field label="关键元素">
+            <Input {...form.register('elements')} placeholder="输入关键元素" />
           </Field>
         </section>
 
