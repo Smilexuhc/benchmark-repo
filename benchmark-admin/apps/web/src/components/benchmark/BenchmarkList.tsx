@@ -5,7 +5,6 @@ import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { type RouterOutputs, trpc } from '@/lib/trpc';
 import { CATEGORY_TREE } from '@benchmark-admin/shared/benchmark/categoryTree';
-import { SHOT_TYPES, TASK_TYPES } from '@benchmark-admin/shared/constants/question-types';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { parseAsBoolean, parseAsString, useQueryStates } from 'nuqs';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -13,6 +12,10 @@ import { useDebounce } from 'use-debounce';
 import { BenchmarkCard } from './BenchmarkCard';
 import { BenchmarkComments } from './BenchmarkComments';
 import { BenchmarkDrawer } from './BenchmarkDrawer';
+
+// Legacy benchmark filter bar values (frontend/src/components/BenchmarkItemsPage.tsx).
+const SCENE_OPTIONS = ['电影 / 预告片', '短剧 / 剧情片段', '动画 / 风格化内容'];
+const SCREEN_SIZE_OPTIONS = ['16:9', '9:16', '2.39:1'];
 
 type BenchmarkItem = RouterOutputs['benchmark']['list']['items'][number];
 type VirtualRow = { key: string | number; index: number; start: number };
@@ -22,7 +25,6 @@ type VirtualRow = { key: string | number; index: number; start: number };
 // scroll buffer for the first paint — once a card mounts, its real height
 // replaces the estimate.
 const ROW_ESTIMATE = 320;
-const SCROLL_AREA_HEIGHT = 'calc(100vh - 240px)';
 const NEAR_BOTTOM_PX = 240;
 
 const DIFFICULTY_OPTIONS = ['易', '中', '难'];
@@ -33,8 +35,8 @@ const PARSERS = {
   categoryL1: parseAsString.withDefault(''),
   categoryL2: parseAsString.withDefault(''),
   categoryL3: parseAsString.withDefault(''),
-  shotType: parseAsString.withDefault(''),
-  taskType: parseAsString.withDefault(''),
+  scene: parseAsString.withDefault(''),
+  screenSize: parseAsString.withDefault(''),
   difficulty: parseAsString.withDefault(''),
   manualTag: parseAsString.withDefault(''),
   score: parseAsString.withDefault(''),
@@ -58,8 +60,8 @@ export function BenchmarkList() {
         categoryL1: state.categoryL1 || undefined,
         categoryL2: state.categoryL2 || undefined,
         categoryL3: state.categoryL3 || undefined,
-        shotType: state.shotType || undefined,
-        taskType: state.taskType || undefined,
+        scene: state.scene || undefined,
+        screenSize: state.screenSize || undefined,
         difficulty: (state.difficulty as '' | '易' | '中' | '难') || undefined,
         manualTag: debouncedManualTag || undefined,
         score: state.score === '' ? undefined : Number(state.score),
@@ -102,7 +104,6 @@ export function BenchmarkList() {
     categoryL1: state.categoryL1 || undefined,
     categoryL2: state.categoryL2 || undefined,
     categoryL3: state.categoryL3 || undefined,
-    shotType: state.shotType || undefined,
     needsRevision: state.needsRevision || undefined,
   });
 
@@ -144,40 +145,62 @@ export function BenchmarkList() {
     setCommentItem({ id: item.id, title: `评论 · 题目 #${item.id}` });
   }
 
+  function resetFilters() {
+    setState({
+      search: '',
+      categoryL1: '',
+      categoryL2: '',
+      categoryL3: '',
+      scene: '',
+      screenSize: '',
+      difficulty: '',
+      manualTag: '',
+      score: '',
+      needsRevision: false,
+      hasComments: false,
+    });
+  }
+
+  const todayNew = stats.data?.todayNew ?? 0;
+
   return (
-    <div className="space-y-3">
+    <div className="flex h-full min-h-0 flex-col space-y-3">
+      {/* Filter bar mirrors legacy frontend/src/components/BenchmarkItemsPage.tsx
+          exactly: Cascader 新分类 → 场景 → 屏幕尺寸 → 难度 → 评分 →
+          测试点人工标注 input → 待修改 → 有评论 → 重置筛选 → spacer →
+          共 N 题 · 今日新增 Y → 导出 ZIP → 新建题目. */}
       <div className="flex flex-wrap items-center gap-2">
         <Cascader
-          ariaLabel="分类"
-          placeholder="分类"
+          ariaLabel="新分类"
+          placeholder="新分类"
           options={cascaderOptions}
           value={cascaderValue}
           onChange={onCategoryChange}
           className="w-[260px]"
         />
         <Select
-          aria-label="镜头"
-          value={state.shotType}
-          onChange={(e) => setState({ shotType: e.target.value })}
-          className="max-w-[140px]"
+          aria-label="场景"
+          value={state.scene}
+          onChange={(e) => setState({ scene: e.target.value })}
+          className="max-w-[180px]"
         >
-          <option value="">镜头</option>
-          {SHOT_TYPES.map((s) => (
-            <option key={s} value={s}>
-              {s}
+          <option value="">场景</option>
+          {SCENE_OPTIONS.map((v) => (
+            <option key={v} value={v}>
+              {v}
             </option>
           ))}
         </Select>
         <Select
-          aria-label="任务"
-          value={state.taskType}
-          onChange={(e) => setState({ taskType: e.target.value })}
+          aria-label="屏幕尺寸"
+          value={state.screenSize}
+          onChange={(e) => setState({ screenSize: e.target.value })}
           className="max-w-[140px]"
         >
-          <option value="">任务</option>
-          {TASK_TYPES.map((tk) => (
-            <option key={tk} value={tk}>
-              {tk}
+          <option value="">屏幕尺寸</option>
+          {SCREEN_SIZE_OPTIONS.map((v) => (
+            <option key={v} value={v}>
+              {v}
             </option>
           ))}
         </Select>
@@ -207,15 +230,13 @@ export function BenchmarkList() {
             </option>
           ))}
         </Select>
-        <label className="flex items-center gap-1 text-sm" aria-label="评论">
-          <input
-            type="checkbox"
-            className="h-4 w-4"
-            checked={state.hasComments}
-            onChange={(e) => setState({ hasComments: e.target.checked })}
-          />
-          评论
-        </label>
+        <Input
+          aria-label="搜索测试点人工标注"
+          placeholder="搜索测试点人工标注"
+          className="max-w-[200px]"
+          value={state.manualTag}
+          onChange={(e) => setState({ manualTag: e.target.value })}
+        />
         <label className="flex items-center gap-1 text-sm">
           <input
             type="checkbox"
@@ -225,15 +246,29 @@ export function BenchmarkList() {
           />
           待修改
         </label>
-        <Input
-          aria-label="搜索测试点人工标注"
-          placeholder="搜索测试点人工标注"
-          className="max-w-[200px]"
-          value={state.manualTag}
-          onChange={(e) => setState({ manualTag: e.target.value })}
-        />
-        <div className="ml-auto flex items-center gap-2 text-sm text-[hsl(var(--muted-foreground))]">
-          共 {total} 条
+        <label className="flex items-center gap-1 text-sm" aria-label="有评论">
+          <input
+            type="checkbox"
+            className="h-4 w-4"
+            checked={state.hasComments}
+            onChange={(e) => setState({ hasComments: e.target.checked })}
+          />
+          有评论
+        </label>
+        <Button size="sm" variant="outline" onClick={resetFilters}>
+          重置筛选
+        </Button>
+        <div className="ml-auto flex items-center gap-3 text-sm text-[hsl(var(--muted-foreground))]">
+          <span>
+            共 <strong className="text-[hsl(var(--foreground))]">{total}</strong> 题 · 今日新增{' '}
+            <strong
+              className={
+                todayNew > 0 ? 'text-emerald-600' : 'text-[hsl(var(--foreground))]'
+              }
+            >
+              {todayNew}
+            </strong>
+          </span>
           <Button
             size="sm"
             variant="outline"
@@ -262,7 +297,7 @@ export function BenchmarkList() {
           没有符合条件的题目
         </div>
       ) : (
-        <div ref={scrollRef} className="overflow-auto" style={{ height: SCROLL_AREA_HEIGHT }}>
+        <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto">
           <div className="relative w-full" style={{ height: `${rowVirtualizer.getTotalSize()}px` }}>
             {rowVirtualizer.getVirtualItems().map((virtualRow: VirtualRow) => {
               const item = items[virtualRow.index];
