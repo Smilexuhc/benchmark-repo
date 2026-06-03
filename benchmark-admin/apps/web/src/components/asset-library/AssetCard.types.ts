@@ -4,6 +4,9 @@ import type { CharacterData, PropData, SceneData } from '@benchmark-admin/shared
 export type AssetCardImage = {
   id: number;
   url: string;
+  // `source` distinguishes 'generated' / 'uploaded' / 'reverse' / 'multiview'.
+  // SceneViewColumn filters by this; other consumers can ignore it.
+  source?: string | null;
 };
 
 type AssetCardCommon = {

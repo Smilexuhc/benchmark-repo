@@ -346,43 +346,49 @@ export function CharacterDrawer({
           </p>
         ) : null}
 
-        {/* Section 4 — image grid */}
-        {!ctx.isNew ? (
-          <section aria-label="图像" className="space-y-2">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-medium">图像</h3>
-              <div className="flex items-center gap-2">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  disabled={ctx.generateImage.isPending}
-                  onClick={handleGenerateImage}
-                >
-                  {ctx.generateImage.isPending ? '生成中…' : '生成图片'}
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  disabled={getUploadUrl.isPending || attachImage.isPending}
-                  onClick={handleUploadClick}
-                >
-                  {getUploadUrl.isPending || attachImage.isPending ? '上传中…' : '上传图片'}
-                </Button>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) handleFileChosen(file);
-                    e.target.value = '';
-                  }}
-                />
-              </div>
+        {/* Section 4 — image grid. Always rendered so the new and edit forms
+            share the same shape; in new mode the buttons disable and a hint
+            tells the user to save first. Matches legacy CharacterDrawer.tsx. */}
+        <section aria-label="图像" className="space-y-2">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-medium">图像</h3>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={ctx.isNew || ctx.generateImage.isPending}
+                onClick={handleGenerateImage}
+              >
+                {ctx.generateImage.isPending ? '生成中…' : '生成图片'}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={ctx.isNew || getUploadUrl.isPending || attachImage.isPending}
+                onClick={handleUploadClick}
+              >
+                {getUploadUrl.isPending || attachImage.isPending ? '上传中…' : '上传图片'}
+              </Button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) handleFileChosen(file);
+                  e.target.value = '';
+                }}
+              />
             </div>
+          </div>
+          {ctx.isNew ? (
+            <p className="text-xs text-[hsl(var(--muted-foreground))]">
+              保存角色后即可生成 / 上传图片。
+            </p>
+          ) : (
             <ImageGrid
               images={images}
               coverImageId={ctx.asset?.coverImageId ?? null}
@@ -401,8 +407,8 @@ export function CharacterDrawer({
                 ctx.deleteImage.isPending ? (ctx.deleteImage.variables?.imageId ?? null) : null
               }
             />
-          </section>
-        ) : null}
+          )}
+        </section>
 
         <DrawerFooter
           left={

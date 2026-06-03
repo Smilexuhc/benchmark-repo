@@ -206,7 +206,7 @@ export function AssetCard({
               </Button>
               {asset.images.length > 1 ? (
                 <span className="text-[11px] text-[hsl(var(--muted-foreground))]">
-                  共 {asset.images.length} 张
+                  共 {asset.images.length} 张 · 点图放大左右翻看
                 </span>
               ) : null}
             </div>
