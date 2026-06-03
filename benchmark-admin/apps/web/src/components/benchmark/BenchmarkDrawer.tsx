@@ -267,7 +267,7 @@ export function BenchmarkDrawer({ id, onClose, onSaved }: BenchmarkDrawerProps) 
           />
         </Field>
         {categoryDefinition ? (
-          <Field label="出题意图">
+          <Field label="分类定义">
             <Textarea
               rows={2}
               value={categoryDefinition}
@@ -287,6 +287,12 @@ export function BenchmarkDrawer({ id, onClose, onSaved }: BenchmarkDrawerProps) 
                 })
               }
               aria-label="难度"
+              title={
+                '难度定义：\n' +
+                '易 · 简单：单一清晰主体，常规或静态表现，没有额外扰动。\n' +
+                '中 · 中等：单点复杂度，主体变多 / 表现变剧烈 / 单层扰动，焦点仍单一。\n' +
+                '难 · 困难：多项复杂度交叉，逼近或越过模型能力边界。'
+              }
               className="w-[82px] shrink-0"
             >
               {DIFFICULTY_OPTIONS.map((v) => (
@@ -295,14 +301,18 @@ export function BenchmarkDrawer({ id, onClose, onSaved }: BenchmarkDrawerProps) 
                 </option>
               ))}
             </Select>
-            <Input {...form.register('manualTag')} className="flex-1" />
+            <Input
+              {...form.register('manualTag')}
+              placeholder="对该题目的人工补充描述，例如：动作断层跳变（动作中途突然跳转，无过渡衔接，前后姿态割裂）"
+              className="flex-1"
+            />
           </div>
         </Field>
 
         <div className="grid grid-cols-2 gap-3">
           <Field label="场景">
             <Select {...form.register('scene')}>
-              <option value="">—</option>
+              <option value="">选择场景</option>
               {SCENE_OPTIONS.map((v) => (
                 <option key={v} value={v}>
                   {v}
@@ -312,7 +322,7 @@ export function BenchmarkDrawer({ id, onClose, onSaved }: BenchmarkDrawerProps) 
           </Field>
           <Field label="屏幕尺寸">
             <Select {...form.register('screenSize')}>
-              <option value="">—</option>
+              <option value="">选择屏幕尺寸</option>
               {SCREEN_SIZE_OPTIONS.map((v) => (
                 <option key={v} value={v}>
                   {v}
@@ -323,39 +333,44 @@ export function BenchmarkDrawer({ id, onClose, onSaved }: BenchmarkDrawerProps) 
         </div>
 
         <Field label="文字提示词">
-          <Textarea rows={3} {...form.register('textPrompt')} />
+          <Textarea
+            rows={4}
+            placeholder={
+              categoryDefinition && !textPrompt
+                ? categoryDefinition
+                : '输入文字提示词，可填写 URL、object key、文件名或备注'
+            }
+            {...form.register('textPrompt')}
+          />
         </Field>
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="评分（0–5）">
-            <div className="flex gap-1.5">
-              {SCORE_OPTIONS.map((v) => {
-                const isActive = scoreValue === v;
-                return (
-                  <button
-                    key={v ?? 'null'}
-                    type="button"
-                    aria-pressed={isActive}
-                    aria-label={v === null ? '未评分' : `评分 ${v}`}
-                    onClick={() =>
-                      form.setValue('score', v as FormValues['score'], { shouldDirty: true })
-                    }
-                    className={`flex-1 rounded border px-1 py-1 text-xs font-medium transition-colors ${
-                      isActive
-                        ? scoreColor(v)
-                        : 'border-[hsl(var(--border))] bg-[hsl(var(--background))] text-[hsl(var(--foreground))] hover:bg-[hsl(var(--muted))]'
-                    }`}
-                  >
-                    {v === null ? '未评分' : v}
-                  </button>
-                );
-              })}
-            </div>
-          </Field>
-          <label className="mt-6 flex items-center gap-2 text-sm">
-            <input type="checkbox" className="h-4 w-4" {...form.register('needsRevision')} />
-            待修改
-          </label>
-        </div>
+        {/* Legacy renders 评分 full-width as a Segmented row; 待修改 isn't in
+            the main drawer (it's flipped via the comments drawer's
+            "标记待修改" action). Dropped the 待修改 checkbox here for parity. */}
+        <Field label="评分">
+          <div className="flex gap-1.5">
+            {SCORE_OPTIONS.map((v) => {
+              const isActive = scoreValue === v;
+              return (
+                <button
+                  key={v ?? 'null'}
+                  type="button"
+                  aria-pressed={isActive}
+                  aria-label={v === null ? '未评分' : `评分 ${v}`}
+                  onClick={() =>
+                    form.setValue('score', v as FormValues['score'], { shouldDirty: true })
+                  }
+                  className={`flex-1 rounded border px-1 py-1 text-xs font-medium transition-colors ${
+                    isActive
+                      ? scoreColor(v)
+                      : 'border-[hsl(var(--border))] bg-[hsl(var(--background))] text-[hsl(var(--foreground))] hover:bg-[hsl(var(--muted))]'
+                  }`}
+                >
+                  {v === null ? '未评分' : v}
+                </button>
+              );
+            })}
+          </div>
+        </Field>
 
         <section
           aria-label="媒体"
@@ -410,7 +425,11 @@ export function BenchmarkDrawer({ id, onClose, onSaved }: BenchmarkDrawerProps) 
         </section>
 
         <Field label="评判标准">
-          <Textarea rows={2} {...form.register('judgingCriteria')} />
+          <Textarea
+            rows={4}
+            placeholder="输入评判标准，可填写 URL、object key、文件名或备注"
+            {...form.register('judgingCriteria')}
+          />
         </Field>
 
         {!isNew ? <BenchmarkComments itemId={id} /> : null}
