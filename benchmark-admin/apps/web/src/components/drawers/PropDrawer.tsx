@@ -222,8 +222,10 @@ export function PropDrawer({
   const isDeleted = ctx.asset?.deletedAt != null;
   const options = optionsQuery.data?.kind === 'prop' ? optionsQuery.data : undefined;
 
+  const editTitle = ctx.asset?.name?.trim() || '编辑道具';
+
   return (
-    <Drawer open onClose={onClose} title={ctx.isNew ? '新建道具' : '编辑道具'}>
+    <Drawer open onClose={onClose} title={ctx.isNew ? '新建道具' : editTitle}>
       <form className="space-y-6" onSubmit={form.handleSubmit(onSubmit)} noValidate>
         {/* Legacy field order (frontend/src/components/PropDrawer.tsx):
             名称 → 类别 → 自由描述（用于 AI 写提示词）→ 提示词 → 图像。
@@ -254,7 +256,7 @@ export function PropDrawer({
         </Field>
 
         <Field
-          label="提示词"
+          label="英文生成提示词"
           trailing={
             <span className="flex items-center gap-3">
               <AiLink
@@ -262,7 +264,7 @@ export function PropDrawer({
                 busyLabel="生成中…"
                 onClick={handleGeneratePrompt}
               >
-                AI 生成
+                AI 生成提示词
               </AiLink>
               <AiLink onClick={handleCopyPrompt} disabled={!form.watch('prompt')}>
                 复制
@@ -270,7 +272,12 @@ export function PropDrawer({
             </span>
           }
         >
-          <Textarea rows={3} {...form.register('prompt')} />
+          <Textarea
+            rows={3}
+            placeholder="可手动填写，或点「AI 生成提示词」。"
+            className="font-mono text-xs"
+            {...form.register('prompt')}
+          />
         </Field>
 
         {ctx.aiError ? (
@@ -279,9 +286,9 @@ export function PropDrawer({
           </p>
         ) : null}
 
-        <section aria-label="图像" className="space-y-2">
+        <section aria-label="图集" className="space-y-2">
           <div className="flex items-center justify-between">
-            <h3 className="text-sm font-medium">图像</h3>
+            <h3 className="text-sm font-medium">图集</h3>
             <div className="flex items-center gap-2">
               <Button
                 type="button"

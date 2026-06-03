@@ -80,7 +80,10 @@ export function AssetLibrary({ kind, renderDrawer, renderInfo, renderExtra }: As
     {
       getNextPageParam: (lastPage: { nextCursor: number | null }) =>
         lastPage.nextCursor ?? undefined,
-      staleTime: 30 * 60_000,
+      // 1 min — short enough that transient empty/stale responses don't
+      // linger; presigned image URLs are valid for ~1h so the re-sign cost
+      // when refetching is acceptable.
+      staleTime: 60_000,
     },
   );
 
