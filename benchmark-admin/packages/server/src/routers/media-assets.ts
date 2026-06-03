@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { type SQL, and, desc, eq, lt, sql } from 'drizzle-orm';
+import { type SQL, and, desc, eq, inArray, lt, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { assets, media } from '@benchmark-admin/shared/db/schema';
 import { db } from '../db/index.js';
@@ -11,6 +11,7 @@ import { protectedProcedure } from '../trpc/procedures.js';
 type MediaRow = {
   id: number;
   assetId: number | null;
+  title: string;
   objectKey: string;
   source: string;
   mediaType: string;
@@ -84,6 +85,7 @@ export const mediaAssetsRouter = t.router({
             SELECT DISTINCT ON (ai.object_key)
               ai.id,
               ai.asset_id    AS "assetId",
+              ai.title,
               ai.object_key  AS "objectKey",
               ai.source,
               ai.media_type  AS "mediaType",
@@ -118,6 +120,7 @@ export const mediaAssetsRouter = t.router({
         .select({
           id: media.id,
           assetId: media.assetId,
+          title: media.title,
           objectKey: media.objectKey,
           source: media.source,
           mediaType: media.mediaType,
@@ -135,6 +138,33 @@ export const mediaAssetsRouter = t.router({
       const nextCursor = hasMore && pageRows.length > 0 ? pageRows[pageRows.length - 1]?.id : null;
 
       return { items: await addUrls(pageRows), nextCursor: nextCursor ?? null };
+    }),
+
+  // Fetch media rows by id list — used by MediaPicker to render the
+  // already-selected thumbnails + names even when the picker drawer is closed
+  // (the list query is gated by `enabled: open`, so it wouldn't otherwise have
+  // anything to display for those ids).
+  byIds: protectedProcedure
+    .input(z.object({ ids: z.array(z.number().int().positive()).max(200) }))
+    .query(async ({ input }) => {
+      if (input.ids.length === 0) return [];
+      // Mirror the `list` query's join so `addUrls` gets the `assetKind` field
+      // it expects on `MediaRow`.
+      const rows = await db
+        .select({
+          id: media.id,
+          assetId: media.assetId,
+          title: media.title,
+          objectKey: media.objectKey,
+          source: media.source,
+          mediaType: media.mediaType,
+          createdAt: media.createdAt,
+          assetKind: assets.kind,
+        })
+        .from(media)
+        .leftJoin(assets, eq(assets.id, media.assetId))
+        .where(inArray(media.id, input.ids));
+      return addUrls(rows);
     }),
 
   getUploadUrl: protectedProcedure

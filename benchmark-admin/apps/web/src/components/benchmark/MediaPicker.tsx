@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Drawer } from '@/components/ui/drawer';
 import { Input } from '@/components/ui/input';
+import { useLightbox } from '@/lib/lightbox-context';
 import { type RouterOutputs, trpc } from '@/lib/trpc';
 
 type MediaItem = RouterOutputs['mediaAssets']['list']['items'][number];
@@ -69,7 +70,16 @@ export function MediaPicker({
   );
 
   const items: MediaItem[] = list.data?.pages.flatMap((p: { items: MediaItem[] }) => p.items) ?? [];
-  const selected = items.filter((i: MediaItem) => selectedIds.includes(i.id));
+  // Always fetch full media rows for the selected IDs so we can render
+  // thumbnails + filenames OUTSIDE the picker drawer. Without this query the
+  // selected strip only had data while `open=true`, so closed pickers fell back
+  // to bare `#id` badges.
+  const selectedQuery = trpc.mediaAssets.byIds.useQuery(
+    { ids: selectedIds },
+    { enabled: selectedIds.length > 0, staleTime: 5 * 60_000 },
+  );
+  const selected: MediaItem[] = (selectedQuery.data ?? []) as MediaItem[];
+  const lightbox = useLightbox();
 
   // Reconcile after the drawer opens and the ENTIRE list has loaded — if a
   // previously selected id is no longer present (deleted out-of-band elsewhere),
@@ -171,23 +181,67 @@ export function MediaPicker({
           />
         </div>
       </div>
+      {/* Selected media strip: thumbnail + filename + click-to-preview + ×.
+          Matches legacy `frontend/src/components/BenchmarkItemDrawer.tsx`
+          MediaPicker rendering (see screenshot in BEN-5 round 12). */}
       <div className="flex flex-wrap gap-2">
-        {selected.map((it: MediaItem) => (
-          <div
-            key={it.id}
-            className="flex items-center gap-1 rounded border border-[hsl(var(--border))] p-1"
-          >
-            <LazyImage src={it.url} alt={`media-${it.id}`} className="h-10 w-10 rounded" />
-            <button
-              type="button"
-              className="px-1 text-xs text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--destructive))]"
-              onClick={() => toggle(it.id)}
-              aria-label={`移除 media-${it.id}`}
+        {selected.map((it: MediaItem) => {
+          const fileName =
+            it.title?.trim() || (it.objectKey?.split('/').pop() ?? `media-${it.id}`);
+          const isImage = mediaType === 'image';
+          const triggerRef: React.RefObject<HTMLElement | null> = { current: null };
+          function preview() {
+            if (isImage) {
+              lightbox.open({
+                images: [{ id: it.id, url: it.url }],
+                triggerRef,
+              });
+            } else {
+              // audio / video — open the presigned URL in a new tab; native
+              // player handles playback. The lightbox is image-only today.
+              window.open(it.url, '_blank', 'noopener,noreferrer');
+            }
+          }
+          return (
+            <div
+              key={it.id}
+              className="flex max-w-[260px] items-center gap-2 rounded border border-[hsl(var(--border))] p-1"
             >
-              ×
-            </button>
-          </div>
-        ))}
+              <button
+                type="button"
+                ref={(el) => {
+                  triggerRef.current = el;
+                }}
+                onClick={preview}
+                aria-label={`预览 ${fileName}`}
+                title={fileName}
+                className="block shrink-0 focus:outline-none focus:ring-2 focus:ring-[hsl(var(--ring))]"
+              >
+                {isImage ? (
+                  <LazyImage src={it.url} alt={fileName} className="h-10 w-10 rounded" />
+                ) : (
+                  <span className="flex h-10 w-10 items-center justify-center rounded bg-[hsl(var(--muted))] text-[10px] text-[hsl(var(--muted-foreground))]">
+                    {mediaType === 'audio' ? '音频' : '视频'}
+                  </span>
+                )}
+              </button>
+              <span
+                className="min-w-0 flex-1 truncate text-xs text-[hsl(var(--foreground))]"
+                title={fileName}
+              >
+                {fileName}
+              </span>
+              <button
+                type="button"
+                className="shrink-0 px-1 text-xs text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--destructive))]"
+                onClick={() => toggle(it.id)}
+                aria-label={`移除 ${fileName}`}
+              >
+                ×
+              </button>
+            </div>
+          );
+        })}
         {selectedIds
           .filter((id) => !selected.some((s: MediaItem) => s.id === id))
           .map((id) => (

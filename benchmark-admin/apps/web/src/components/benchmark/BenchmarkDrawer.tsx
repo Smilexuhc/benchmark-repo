@@ -19,7 +19,6 @@ import { z } from 'zod';
 
 type MediaLink = RouterOutputs['benchmark']['get']['media']['character_image'][number];
 import { Field } from '@/components/drawers/shared/Field';
-import { BenchmarkComments } from './BenchmarkComments';
 import { MediaPicker } from './MediaPicker';
 
 const SCENE_OPTIONS = ['电影 / 预告片', '短剧 / 剧情片段', '动画 / 风格化内容'] as const;
@@ -343,9 +342,55 @@ export function BenchmarkDrawer({ id, onClose, onSaved }: BenchmarkDrawerProps) 
             {...form.register('textPrompt')}
           />
         </Field>
-        {/* Legacy renders 评分 full-width as a Segmented row; 待修改 isn't in
-            the main drawer (it's flipped via the comments drawer's
-            "标记待修改" action). Dropped the 待修改 checkbox here for parity. */}
+        {/* Legacy order: text_prompt → MediaPickers (no section h3) → 评分 →
+            评判标准. Comments are NOT in the edit drawer — they live in their
+            own drawer triggered from the list card. */}
+        <MediaPicker
+          label="人物图片素材"
+          mediaType="image"
+          assetKind="character"
+          multi
+          selectedIds={media.characterImageIds}
+          onChange={(ids) => setMedia((m) => ({ ...m, characterImageIds: ids }))}
+        />
+        <MediaPicker
+          label="场景图片素材"
+          mediaType="image"
+          assetKind="scene"
+          multi
+          selectedIds={media.sceneImageIds}
+          onChange={(ids) => setMedia((m) => ({ ...m, sceneImageIds: ids }))}
+        />
+        <MediaPicker
+          label="道具图片素材"
+          mediaType="image"
+          assetKind="prop"
+          multi
+          selectedIds={media.propImageIds}
+          onChange={(ids) => setMedia((m) => ({ ...m, propImageIds: ids }))}
+        />
+        <MediaPicker
+          label="音频输入"
+          mediaType="audio"
+          multi
+          selectedIds={media.audioInputIds}
+          onChange={(ids) => setMedia((m) => ({ ...m, audioInputIds: ids }))}
+        />
+        <MediaPicker
+          label="视频输入"
+          mediaType="video"
+          multi
+          selectedIds={media.videoInputIds}
+          onChange={(ids) => setMedia((m) => ({ ...m, videoInputIds: ids }))}
+        />
+        <MediaPicker
+          label="视频输出"
+          mediaType="video"
+          multi
+          selectedIds={media.videoOutputIds}
+          onChange={(ids) => setMedia((m) => ({ ...m, videoOutputIds: ids }))}
+        />
+
         <Field label="评分">
           <div className="flex gap-1.5">
             {SCORE_OPTIONS.map((v) => {
@@ -372,58 +417,6 @@ export function BenchmarkDrawer({ id, onClose, onSaved }: BenchmarkDrawerProps) 
           </div>
         </Field>
 
-        <section
-          aria-label="媒体"
-          className="space-y-3 rounded-md border border-[hsl(var(--border))] p-3"
-        >
-          <h3 className="text-sm font-semibold">媒体绑定</h3>
-          <MediaPicker
-            label="人物图片素材"
-            mediaType="image"
-            assetKind="character"
-            multi
-            selectedIds={media.characterImageIds}
-            onChange={(ids) => setMedia((m) => ({ ...m, characterImageIds: ids }))}
-          />
-          <MediaPicker
-            label="场景图片素材"
-            mediaType="image"
-            assetKind="scene"
-            multi
-            selectedIds={media.sceneImageIds}
-            onChange={(ids) => setMedia((m) => ({ ...m, sceneImageIds: ids }))}
-          />
-          <MediaPicker
-            label="道具图片素材"
-            mediaType="image"
-            assetKind="prop"
-            multi
-            selectedIds={media.propImageIds}
-            onChange={(ids) => setMedia((m) => ({ ...m, propImageIds: ids }))}
-          />
-          <MediaPicker
-            label="音频输入"
-            mediaType="audio"
-            multi
-            selectedIds={media.audioInputIds}
-            onChange={(ids) => setMedia((m) => ({ ...m, audioInputIds: ids }))}
-          />
-          <MediaPicker
-            label="视频输入"
-            mediaType="video"
-            multi
-            selectedIds={media.videoInputIds}
-            onChange={(ids) => setMedia((m) => ({ ...m, videoInputIds: ids }))}
-          />
-          <MediaPicker
-            label="视频输出"
-            mediaType="video"
-            multi
-            selectedIds={media.videoOutputIds}
-            onChange={(ids) => setMedia((m) => ({ ...m, videoOutputIds: ids }))}
-          />
-        </section>
-
         <Field label="评判标准">
           <Textarea
             rows={4}
@@ -431,8 +424,6 @@ export function BenchmarkDrawer({ id, onClose, onSaved }: BenchmarkDrawerProps) 
             {...form.register('judgingCriteria')}
           />
         </Field>
-
-        {!isNew ? <BenchmarkComments itemId={id} /> : null}
 
         <footer className="flex items-center justify-between border-t border-[hsl(var(--border))] pt-3">
           {!isNew ? (
