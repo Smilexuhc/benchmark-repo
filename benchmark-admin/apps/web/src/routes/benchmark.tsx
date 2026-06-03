@@ -1,6 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { BenchmarkList } from '@/components/benchmark/BenchmarkList';
 import { StatsDashboard } from '@/components/benchmark/StatsDashboard';
+import { AssetsLayout } from './(assets)/__layout';
 
 export const Route = createFileRoute('/benchmark')({
   component: BenchmarkPage,
@@ -8,14 +9,13 @@ export const Route = createFileRoute('/benchmark')({
 
 function BenchmarkPage() {
   return (
-    <section className="grid grid-cols-[1fr_280px] gap-6">
-      <div>
-        <h1 className="mb-4 text-xl font-semibold tracking-tight">视频基准</h1>
+    <AssetsLayout>
+      <div className="grid grid-cols-[1fr_280px] gap-6">
         <BenchmarkList />
+        <aside>
+          <StatsDashboard />
+        </aside>
       </div>
-      <aside>
-        <StatsDashboard />
-      </aside>
-    </section>
+    </AssetsLayout>
   );
 }

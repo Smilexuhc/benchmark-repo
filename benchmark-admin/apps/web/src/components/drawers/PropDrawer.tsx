@@ -225,53 +225,33 @@ export function PropDrawer({
   return (
     <Drawer open onClose={onClose} title={ctx.isNew ? '新建道具' : '编辑道具'}>
       <form className="space-y-6" onSubmit={form.handleSubmit(onSubmit)} noValidate>
+        {/* Legacy field order (frontend/src/components/PropDrawer.tsx):
+            名称 → 类别 → 自由描述（用于 AI 写提示词）→ 提示词 → 图像。
+            Admin keeps `era` and `genre` columns in the DB but doesn't
+            surface them in the drawer — legacy doesn't either. */}
+        <Field label="名称" required error={form.formState.errors.name?.message}>
+          <Input {...form.register('name')} placeholder="输入道具名称" />
+        </Field>
+
+        <Field label="类别">
+          <AutoComplete
+            value={form.watch('category') ?? ''}
+            onChange={(v) => form.setValue('category', v, { shouldDirty: true })}
+            options={options?.category ?? []}
+            aria-label="类别"
+          />
+        </Field>
+
         <Field
-          label="描述"
+          label="自由描述（可选，用于 AI 写提示词）"
           trailing={
             <AiLink busy={ctx.extractFields.isPending} busyLabel="解析中…" onClick={handleExtract}>
               AI 填入字段
             </AiLink>
           }
         >
-          <Textarea
-            rows={4}
-            placeholder="粘贴一段自由文本描述…"
-            {...form.register('description')}
-          />
+          <Textarea rows={4} {...form.register('description')} />
         </Field>
-
-        <section className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <Field label="分类">
-              <AutoComplete
-                value={form.watch('category') ?? ''}
-                onChange={(v) => form.setValue('category', v, { shouldDirty: true })}
-                options={options?.category ?? []}
-                aria-label="分类"
-              />
-            </Field>
-            <Field label="时代">
-              <AutoComplete
-                value={form.watch('era') ?? ''}
-                onChange={(v) => form.setValue('era', v, { shouldDirty: true })}
-                options={[]}
-                aria-label="时代"
-              />
-            </Field>
-            <Field label="题材">
-              <AutoComplete
-                value={form.watch('genre') ?? ''}
-                onChange={(v) => form.setValue('genre', v, { shouldDirty: true })}
-                options={[]}
-                aria-label="题材"
-              />
-            </Field>
-          </div>
-
-          <Field label="名称" required error={form.formState.errors.name?.message}>
-            <Input {...form.register('name')} />
-          </Field>
-        </section>
 
         <Field
           label="提示词"

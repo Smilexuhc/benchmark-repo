@@ -1,7 +1,6 @@
 import { Link, Outlet, createRootRoute, useLocation, useNavigate } from '@tanstack/react-router';
 import { useEffect } from 'react';
 import { ConfirmHost, Toaster } from '@/components/feedback';
-import { Nav } from '@/components/nav';
 import { Button } from '@/components/ui/button';
 import { LightboxProvider } from '@/components/ui/lightbox';
 import { useAuthActions, useSession } from '@/lib/auth-client';
@@ -77,7 +76,8 @@ function RootContent() {
             <Link to="/" className="text-base font-semibold tracking-tight">
               Benchmark Admin
             </Link>
-            <Nav />
+            {/* The per-route Segmented tabs in (assets)/__layout own the asset/benchmark
+                navigation, matching legacy's single-strip header. */}
           </div>
           <div className="flex items-center gap-3 text-sm text-[hsl(var(--muted-foreground))]">
             <span aria-label="signed in user">{session.data?.email}</span>
