@@ -18,6 +18,7 @@ const MIGRATION_FILES = [
   '0003_soft_delete_indexes.sql',
   '0004_add_difficulty.sql',
   '0005_add_video_benchmark_categories.sql',
+  '0006_merge_video_benchmark_categories.sql',
 ];
 
 type TestDb = ReturnType<typeof drizzle<typeof schema>>;
