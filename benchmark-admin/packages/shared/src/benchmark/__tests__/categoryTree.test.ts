@@ -19,7 +19,7 @@ function leaves(tree: CategoryOption[]): CategoryOption[] {
   return out;
 }
 
-describe('categoryTree (legacy parity)', () => {
+describe('categoryTree', () => {
   it('every node carries code + value; every leaf has a non-empty definition', () => {
     const walk = (nodes: CategoryOption[]) => {
       for (const n of nodes) {
@@ -39,8 +39,8 @@ describe('categoryTree (legacy parity)', () => {
     expect(CATEGORY_TREE.map((n) => n.value)).toEqual(['单镜头', '连续镜头', '长镜头']);
   });
 
-  it('leaf count matches legacy (guards against a partial port)', () => {
-    expect(leaves(CATEGORY_TREE).length).toBe(88);
+  it('leaf count matches the current taxonomy (guards against a partial port)', () => {
+    expect(leaves(CATEGORY_TREE).length).toBe(85);
   });
 
   it('definitionFor returns the exact leaf definition for a known path', () => {
@@ -58,6 +58,17 @@ describe('categoryTree (legacy parity)', () => {
   it('leafByPath resolves a known leaf and rejects an unknown one', () => {
     expect(leafByPath('长镜头', '综合应用题', '短剧')?.code).toBe('3.1.1');
     expect(leafByPath('长镜头', '综合应用题', '不存在')).toBeUndefined();
+  });
+
+  it('resolves merged leaves and rejects removed labels', () => {
+    expect(leafByPath('单镜头', '场景与空间', '人物场景融合和交互')?.code).toBe('1.3.3');
+    expect(leafByPath('单镜头', '场景与空间', '人物场景融合、交互')).toBeUndefined();
+    expect(leafByPath('单镜头', '场景与空间', '场景可行动性')).toBeUndefined();
+
+    expect(leafByPath('单镜头', '表演与动作', '动作执行')?.code).toBe('1.4.1');
+    expect(leafByPath('单镜头', '表演与动作', '简单动作执行')).toBeUndefined();
+    expect(leafByPath('单镜头', '表演与动作', '复杂动作执行')).toBeUndefined();
+    expect(leafByPath('单镜头', '表演与动作', '物理反馈、受力')).toBeUndefined();
   });
 
   it('labelsForPath returns code-prefixed labels for a full path', () => {

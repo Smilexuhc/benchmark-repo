@@ -43,6 +43,13 @@
       "when": 1780203406644,
       "tag": "0005_add_video_benchmark_categories",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1780203406645,
+      "tag": "0006_merge_video_benchmark_categories",
+      "breakpoints": true
     }
   ]
 }
