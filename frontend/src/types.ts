@@ -100,6 +100,7 @@ export interface VideoBenchmarkItem {
   audio_input: string
   video_input: string
   text_prompt: string
+  expected_video_time_in_sec: number | null
   judging_criteria: string
   video_output: string
   score: number | null
@@ -146,7 +147,7 @@ export type VideoBenchmarkItemInput = Pick<
   | 'shot_type' | 'task_type' | 'question_type' | 'manual_tag' | 'difficulty' | 'scene' | 'screen_size'
   | 'category_l1' | 'category_l2' | 'category_l3' | 'category_definition'
   | 'character_image_asset' | 'scene_image_asset' | 'prop_image_asset'
-  | 'audio_input' | 'video_input' | 'text_prompt' | 'judging_criteria' | 'video_output' | 'score'
+  | 'audio_input' | 'video_input' | 'text_prompt' | 'expected_video_time_in_sec' | 'judging_criteria' | 'video_output' | 'score'
   | 'character_image_id' | 'scene_image_id' | 'prop_image_id' | 'audio_input_id'
   | 'video_input_id' | 'video_output_id'
   | 'character_image_ids' | 'scene_image_ids' | 'prop_image_ids' | 'audio_input_media_ids'
@@ -251,6 +252,7 @@ export const FIELD_LABELS: Record<string, string> = {
   video_output_id: '视频输出',
   video_input: '视频输入',
   text_prompt: '文字提示词',
+  expected_video_time_in_sec: '视频时长',
   judging_criteria: '评判标准',
   video_output: '视频输出',
   score: '评分',
@@ -288,6 +290,7 @@ export const emptyVideoBenchmarkItem: VideoBenchmarkItemInput = {
   audio_input: '',
   video_input: '',
   text_prompt: '',
+  expected_video_time_in_sec: null,
   judging_criteria: '',
   video_output: '',
   score: null,

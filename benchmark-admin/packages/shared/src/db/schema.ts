@@ -103,6 +103,7 @@ export const videoBenchmarkItems = pgTable(
     // Legacy difficulty: empty (unset) or one of 易/中/难. Auto-prefixed onto manual_tag as 【难】.
     difficulty: text('difficulty').notNull().default(''),
     textPrompt: text('text_prompt').notNull().default(''),
+    expectedVideoTimeInSec: integer('expected_video_time_in_sec'),
     judgingCriteria: text('judging_criteria').notNull().default(''),
     score: smallint('score'),
     needsRevision: boolean('needs_revision').notNull().default(false),
@@ -112,6 +113,10 @@ export const videoBenchmarkItems = pgTable(
   },
   (t) => [
     check('chk_vbi_score', sql`${t.score} IS NULL OR (${t.score} >= 0 AND ${t.score} <= 5)`),
+    check(
+      'chk_vbi_expected_video_time',
+      sql`${t.expectedVideoTimeInSec} IS NULL OR ${t.expectedVideoTimeInSec} >= 0`,
+    ),
     check('chk_vbi_difficulty', sql`${t.difficulty} IN ('', '易', '中', '难')`),
     index('idx_vbi_shot_question').on(t.shotType, t.questionType),
     index('idx_vbi_category').on(t.categoryL1, t.categoryL2, t.categoryL3),

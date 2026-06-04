@@ -1,6 +1,7 @@
 # ── builder ───────────────────────────────────────────────────────────────────
 FROM node:22-alpine AS builder
 RUN corepack enable && corepack prepare pnpm@latest --activate
+ENV CI=true
 WORKDIR /app
 
 COPY .npmrc pnpm-workspace.yaml package.json pnpm-lock.yaml ./
@@ -16,6 +17,7 @@ RUN pnpm --filter @benchmark-admin/app-server... build
 # ── runtime ───────────────────────────────────────────────────────────────────
 FROM node:22-alpine AS api
 RUN corepack enable && corepack prepare pnpm@latest --activate
+ENV CI=true
 WORKDIR /app
 
 COPY .npmrc pnpm-workspace.yaml package.json pnpm-lock.yaml ./

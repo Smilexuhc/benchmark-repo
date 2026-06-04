@@ -57,6 +57,10 @@ const FormSchema = z.object({
   categoryDefinition: z.string(),
   difficulty: z.enum(['', '易', '中', '难']),
   textPrompt: z.string(),
+  expectedVideoTimeInSec: z
+    .union([z.coerce.number().int().min(0), z.literal('')])
+    .transform((v) => (v === '' ? null : v))
+    .pipe(z.number().int().min(0).nullable()),
   judgingCriteria: z.string(),
   score: z
     .union([z.coerce.number().int().min(0).max(5), z.literal('')])
@@ -79,6 +83,7 @@ const EMPTY: FormValues = {
   categoryDefinition: '',
   difficulty: '',
   textPrompt: '',
+  expectedVideoTimeInSec: null,
   judgingCriteria: '',
   score: null,
   needsRevision: false,
@@ -146,6 +151,7 @@ export function BenchmarkDrawer({ id, onClose, onSaved }: BenchmarkDrawerProps) 
           categoryDefinition: get.data.categoryDefinition,
           difficulty: get.data.difficulty as FormValues['difficulty'],
           textPrompt: get.data.textPrompt,
+          expectedVideoTimeInSec: get.data.expectedVideoTimeInSec,
           judgingCriteria: get.data.judgingCriteria,
           score: get.data.score,
           needsRevision: get.data.needsRevision,
@@ -340,6 +346,16 @@ export function BenchmarkDrawer({ id, onClose, onSaved }: BenchmarkDrawerProps) 
                 : '输入文字提示词，可填写 URL、object key、文件名或备注'
             }
             {...form.register('textPrompt')}
+          />
+        </Field>
+
+        <Field label="视频时长">
+          <Input
+            type="number"
+            min={0}
+            step={1}
+            placeholder="预期视频时长（秒）"
+            {...form.register('expectedVideoTimeInSec')}
           />
         </Field>
         {/* Legacy order: text_prompt → MediaPickers (no section h3) → 评分 →

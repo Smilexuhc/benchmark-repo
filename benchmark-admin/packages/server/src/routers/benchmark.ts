@@ -244,6 +244,7 @@ const ItemScalars = z.object({
   categoryDefinition: z.string().default(''),
   difficulty: z.enum(['', '易', '中', '难']).default(''),
   textPrompt: z.string().default(''),
+  expectedVideoTimeInSec: z.number().int().min(0).nullable().default(null),
   judgingCriteria: z.string().default(''),
   score: z.number().int().min(0).max(5).nullable().default(null),
   needsRevision: z.boolean().default(false),
