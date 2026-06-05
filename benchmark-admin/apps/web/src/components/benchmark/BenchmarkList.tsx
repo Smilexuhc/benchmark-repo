@@ -1,3 +1,4 @@
+import { toast } from '@/components/feedback';
 import { Button } from '@/components/ui/button';
 import { Cascader } from '@/components/ui/cascader';
 import { buildCascaderOptionsWithCounts } from '@/components/ui/cascader.helpers';
@@ -44,7 +45,7 @@ const PARSERS = {
   hasComments: parseAsBoolean.withDefault(false),
 };
 
-type CommentDrawerItem = { id: number; title: string };
+type CommentDrawerItem = { id: number; title: string; needsRevision: boolean };
 
 export function BenchmarkList() {
   const [state, setState] = useQueryStates(PARSERS, { history: 'replace' });
@@ -142,7 +143,11 @@ export function BenchmarkList() {
   );
 
   function openComments(item: BenchmarkItem) {
-    setCommentItem({ id: item.id, title: `评论 · 题目 #${item.id}` });
+    setCommentItem({
+      id: item.id,
+      title: `评论 · 题目 #${item.id}`,
+      needsRevision: item.needsRevision,
+    });
   }
 
   function resetFilters() {
@@ -337,7 +342,13 @@ export function BenchmarkList() {
       )}
 
       {commentItem !== null ? (
-        <CommentDrawer item={commentItem} onClose={() => setCommentItem(null)} />
+        <CommentDrawer
+          item={commentItem}
+          onClose={() => setCommentItem(null)}
+          onNeedsRevisionChange={(value) =>
+            setCommentItem((prev) => (prev ? { ...prev, needsRevision: value } : prev))
+          }
+        />
       ) : null}
 
       {drawerId !== null ? (
@@ -353,14 +364,35 @@ export function BenchmarkList() {
 
 // Lightweight comments-only drawer for the 评论 N pill. Reuses BenchmarkComments
 // so adds/deletes flow through the same optimistic-update path as the editor
-// drawer's tab.
+// drawer's tab. The 标记待修改 / 取消待修改 toggle lives in the header to match
+// legacy frontend/src/components/BenchmarkItemsPage.tsx (PR #20).
 function CommentDrawer({
   item,
   onClose,
+  onNeedsRevisionChange,
 }: {
   item: CommentDrawerItem;
   onClose: () => void;
+  onNeedsRevisionChange: (value: boolean) => void;
 }) {
+  const utils = trpc.useUtils();
+  const setNeedsRevision = trpc.benchmark.setNeedsRevision.useMutation({
+    onSettled() {
+      utils.benchmark.list.invalidate();
+    },
+  });
+
+  async function toggle() {
+    const next = !item.needsRevision;
+    try {
+      await setNeedsRevision.mutateAsync({ id: item.id, needsRevision: next });
+      onNeedsRevisionChange(next);
+      toast.success(next ? '已标记待修改' : '已取消待修改');
+    } catch (err) {
+      toast.error((err as Error)?.message || '标记更新失败');
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-40 flex justify-end">
       <button
@@ -375,11 +407,21 @@ function CommentDrawer({
         aria-label={item.title}
         className="relative flex h-full w-full max-w-md flex-col gap-4 overflow-y-auto bg-[hsl(var(--background))] p-4 shadow-lg"
       >
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-2">
           <h3 className="text-base font-semibold">{item.title}</h3>
-          <Button size="sm" variant="ghost" onClick={onClose} aria-label="关闭">
-            ×
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant={item.needsRevision ? 'destructive' : 'outline'}
+              onClick={toggle}
+              disabled={setNeedsRevision.isPending}
+            >
+              {item.needsRevision ? '取消待修改' : '标记待修改'}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={onClose} aria-label="关闭">
+              ×
+            </Button>
+          </div>
         </div>
         <BenchmarkComments itemId={item.id} />
       </aside>

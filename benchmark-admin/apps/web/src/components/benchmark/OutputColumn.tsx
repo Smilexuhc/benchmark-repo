@@ -1,4 +1,3 @@
-import { Button } from '@/components/ui/button';
 import { toast } from '@/components/feedback';
 import { cn } from '@/lib/utils';
 import { type RouterOutputs, trpc } from '@/lib/trpc';
@@ -65,16 +64,6 @@ export function OutputColumn({ item, className }: OutputColumnProps) {
       utils.benchmark.list.invalidate();
     },
   });
-  const setNeedsRevision = trpc.benchmark.setNeedsRevision.useMutation({
-    onError(err: { message: string }) {
-      toast.error(err.message || '标记更新失败');
-      utils.benchmark.list.invalidate();
-    },
-    onSettled() {
-      utils.benchmark.list.invalidate();
-    },
-  });
-
   const videoUrl = item.media.video_output[0]?.url ?? null;
   const aspect = screenSizeToAspect(item.screenSize ?? '');
   const score = item.score;
@@ -84,10 +73,6 @@ export function OutputColumn({ item, className }: OutputColumnProps) {
   function applyScore(next: number | null) {
     if (next === score) return;
     setScore.mutate({ id: item.id, score: next });
-  }
-
-  function toggleRevision() {
-    setNeedsRevision.mutate({ id: item.id, needsRevision: !item.needsRevision });
   }
 
   return (
@@ -162,16 +147,6 @@ export function OutputColumn({ item, className }: OutputColumnProps) {
           );
         })}
       </div>
-
-      <Button
-        size="sm"
-        variant={item.needsRevision ? 'destructive' : 'outline'}
-        onClick={toggleRevision}
-        disabled={setNeedsRevision.isPending}
-        className="self-start"
-      >
-        {item.needsRevision ? '取消待修改' : '标记待修改'}
-      </Button>
     </div>
   );
 }
