@@ -2,8 +2,13 @@
  * Tests the BenchmarkList card layout (U8): single Cascader category filter,
  * the simplified label set (分类 / 镜头 / 任务 / 难度 / 评分 / 评论), and that
  * the row renders as a BenchmarkCard with the leaf category in the title.
+ *
+ * Also covers the CommentDrawer header toggle (legacy parity with PR #20):
+ * clicking 评论 opens the drawer; the drawer header shows 标记待修改 / 取消待修改
+ * that fires benchmark.setNeedsRevision.
  */
 import { render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { NuqsTestingAdapter } from 'nuqs/adapters/testing';
 import { describe, expect, it, vi } from 'vitest';
 import { createTrpcMock } from '@/test/trpc-mock';
@@ -37,14 +42,34 @@ const ITEM = {
   },
 };
 
+const setNeedsRevisionCalls: { id: number; needsRevision: boolean }[] = [];
+
+vi.mock('@/components/feedback', () => ({
+  toast: {
+    success: vi.fn(),
+    error: vi.fn(),
+    warning: vi.fn(),
+    info: vi.fn(),
+    dismiss: vi.fn(),
+  },
+  confirm: vi.fn(async () => true),
+}));
+
 vi.mock('@/lib/trpc', () =>
   createTrpcMock({
     query: {
       'exports.getDownloadUrl': () => ({ url: '/api/export/benchmark.zip' }),
       'benchmark.stats': () => ({ todayNew: 0, groups: [] }),
+      'benchmark.comments.list': () => [],
     },
     infiniteQuery: {
       'benchmark.list': () => ({ items: [ITEM], total: 1, nextCursor: null }),
+    },
+    mutation: {
+      'benchmark.setNeedsRevision': (input) => {
+        setNeedsRevisionCalls.push(input as { id: number; needsRevision: boolean });
+        return { id: (input as { id: number }).id, needsRevision: true };
+      },
     },
   }),
 );
@@ -82,5 +107,23 @@ describe('BenchmarkList card layout', () => {
     ) as HTMLElement | null;
     expect(card).not.toBeNull();
     expect(within(card as HTMLElement).getByTitle(/人脸与身份稳定性/)).toBeInTheDocument();
+  });
+});
+
+describe('BenchmarkList comment drawer 标记待修改 toggle', () => {
+  it('opens the comment drawer with 标记待修改 in the header and fires setNeedsRevision on click', async () => {
+    setNeedsRevisionCalls.length = 0;
+    renderList();
+    const user = userEvent.setup();
+
+    // ITEM has needsRevision=false → button reads 标记待修改; click the
+    // 评论 pill on the card to open the drawer first.
+    await user.click(await screen.findByRole('button', { name: /评论/ }));
+    const dialog = await screen.findByRole('dialog', { name: /评论 · 题目 #7/ });
+    const toggle = within(dialog).getByRole('button', { name: '标记待修改' });
+
+    await user.click(toggle);
+
+    expect(setNeedsRevisionCalls).toEqual([{ id: 7, needsRevision: true }]);
   });
 });

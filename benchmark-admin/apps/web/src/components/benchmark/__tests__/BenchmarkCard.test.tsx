@@ -5,7 +5,11 @@
  * - ExpandableText prompt toggles 展开 / 收起
  * - asset thumbs open the U2 lightbox
  * - scoreColor tier classes follow the 5→green / 3→blue / 1→orange / null→gray rule
- * - inline score editor + needsRevision toggle fire the right mutations
+ * - inline score editor fires setScore
+ *
+ * The 标记待修改 / 取消待修改 toggle lives in the comment drawer header (legacy
+ * parity with PR #20), so its behaviour is covered in BenchmarkList.test.tsx,
+ * not here.
  */
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -86,17 +90,12 @@ function makeItem(
 }
 
 const setScoreCalls: { id: number; score: number | null }[] = [];
-const setNeedsRevisionCalls: { id: number; needsRevision: boolean }[] = [];
 
 vi.mock('@/lib/trpc', () =>
   createTrpcMock({
     mutation: {
       'benchmark.setScore': (input) => {
         setScoreCalls.push(input as { id: number; score: number | null });
-        return { id: (input as { id: number }).id };
-      },
-      'benchmark.setNeedsRevision': (input) => {
-        setNeedsRevisionCalls.push(input as { id: number; needsRevision: boolean });
         return { id: (input as { id: number }).id };
       },
     },
@@ -181,16 +180,6 @@ describe('BenchmarkCard', () => {
     await user.click(screen.getByRole('radio', { name: '4' }));
 
     expect(setScoreCalls).toEqual([{ id: 99, score: 4 }]);
-  });
-
-  it('fires setNeedsRevision when the toggle button is clicked', async () => {
-    setNeedsRevisionCalls.length = 0;
-    renderCard(makeItem({ id: 55, needsRevision: false }));
-
-    const user = userEvent.setup();
-    await user.click(screen.getByRole('button', { name: '标记待修改' }));
-
-    expect(setNeedsRevisionCalls).toEqual([{ id: 55, needsRevision: true }]);
   });
 
   it('renders the output video with the correct aspect ratio', () => {
