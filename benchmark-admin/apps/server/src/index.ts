@@ -14,7 +14,6 @@ import {
   buildExportZip,
 } from '@benchmark-admin/server/services/exports';
 import * as storage from '@benchmark-admin/server/services/storage';
-import { validateUpload } from '@benchmark-admin/server/services/upload';
 import {
   assets,
   media,
@@ -24,7 +23,6 @@ import {
 import { env } from '@benchmark-admin/shared/env';
 import cookie from '@fastify/cookie';
 import cors from '@fastify/cors';
-import multipart from '@fastify/multipart';
 import rateLimit from '@fastify/rate-limit';
 import { fastifyTRPCPlugin } from '@trpc/server/adapters/fastify';
 import { type SQL, and, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
@@ -47,7 +45,6 @@ await server.register(cors, {
 });
 
 await server.register(cookie);
-await server.register(multipart);
 
 // Rate limiting — disabled globally; enabled per-route where needed
 await server.register(rateLimit, { global: false });
@@ -123,43 +120,6 @@ server.post('/api/auth/logout', { preHandler: requireSession }, async (request, 
   if (token) revokeToken(token);
   reply.clearCookie(COOKIE_NAME, { path: '/' });
   return reply.send({ ok: true });
-});
-
-// ── Upload ────────────────────────────────────────────────────────────────────
-
-const MAX_UPLOAD_BYTES = 50 * 1024 * 1024; // 50 MB
-
-server.post('/api/upload', { preHandler: requireSession }, async (request, reply) => {
-  const contentLength = request.headers['content-length'];
-  if (contentLength && Number(contentLength) > MAX_UPLOAD_BYTES) {
-    return reply.status(413).send({ error: 'File too large' });
-  }
-
-  const data = await request.file({ limits: { fileSize: MAX_UPLOAD_BYTES } });
-  if (!data) return reply.status(400).send({ error: 'No file' });
-
-  const chunks: Buffer[] = [];
-  let totalBytes = 0;
-  for await (const chunk of data.file) {
-    totalBytes += chunk.length;
-    if (totalBytes > MAX_UPLOAD_BYTES) {
-      return reply.status(413).send({ error: 'File too large' });
-    }
-    chunks.push(chunk as Buffer);
-  }
-
-  const bytes = Buffer.concat(chunks);
-
-  // Extension allowlist + magic-byte sniffing (extracted, unit-tested module).
-  const validation = validateUpload(data.filename, bytes);
-  if (!validation.ok) {
-    return reply.status(400).send({ error: validation.error });
-  }
-
-  const objectKey = storage.newObjectKey(`.${validation.ext}`, validation.prefix);
-  // Use server-authoritative content type — never trust client-supplied mimetype
-  await storage.putObject(objectKey, bytes, validation.contentType);
-  return reply.send({ objectKey });
 });
 
 // ── Export ZIP ────────────────────────────────────────────────────────────────
