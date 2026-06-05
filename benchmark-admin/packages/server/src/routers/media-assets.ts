@@ -1,10 +1,12 @@
 import path from 'node:path';
+import { assets, media } from '@benchmark-admin/shared/db/schema';
+import { TRPCError } from '@trpc/server';
 import { type SQL, and, desc, eq, inArray, lt, sql } from 'drizzle-orm';
 import { z } from 'zod';
-import { assets, media } from '@benchmark-admin/shared/db/schema';
 import { db } from '../db/index.js';
 import { mediaVisible } from '../db/soft-delete.js';
 import * as storage from '../services/storage/index.js';
+import { EXT_TO_CONTENT_TYPE } from '../services/upload/validate.js';
 import { t } from '../trpc/init.js';
 import { protectedProcedure } from '../trpc/procedures.js';
 
@@ -172,14 +174,24 @@ export const mediaAssetsRouter = t.router({
       z.object({
         mediaType: z.enum(['image', 'audio', 'video']),
         filename: z.string().min(1),
-        contentType: z.string().min(1),
       }),
     )
     .mutation(async ({ input }) => {
+      // Server-authoritative: trust only the filename extension against the
+      // EXT_TO_CONTENT_TYPE allowlist. The contentType we sign with comes
+      // from the table, never from the client.
+      const ext = path.extname(input.filename).toLowerCase().replace(/^\./, '');
+      const contentType = EXT_TO_CONTENT_TYPE[ext];
+      if (!contentType) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Unsupported file type' });
+      }
+      const family = contentType.split('/')[0];
+      if (family !== input.mediaType) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Unsupported file type' });
+      }
       const prefixMap = { image: 'images', audio: 'audios', video: 'videos' } as const;
-      const ext = path.extname(input.filename).toLowerCase() || '.bin';
-      const objectKey = storage.newObjectKey(ext, prefixMap[input.mediaType]);
-      const uploadUrl = await storage.getPresignedPutUrl(objectKey, input.contentType);
+      const objectKey = storage.newObjectKey(`.${ext}`, prefixMap[input.mediaType]);
+      const uploadUrl = await storage.getPresignedPutUrl(objectKey, contentType);
       return { uploadUrl, objectKey };
     }),
 

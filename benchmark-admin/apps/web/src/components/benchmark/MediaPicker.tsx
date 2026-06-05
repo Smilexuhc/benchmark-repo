@@ -121,7 +121,6 @@ export function MediaPicker({
         const { uploadUrl, objectKey } = await getUploadUrl.mutateAsync({
           mediaType,
           filename: file.name,
-          contentType: file.type || 'application/octet-stream',
         });
         await fetch(uploadUrl, {
           method: 'PUT',
