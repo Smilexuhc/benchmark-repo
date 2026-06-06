@@ -208,6 +208,28 @@ describe('AI error handling', () => {
       code: 'AI_AUTH_FAILED',
     });
   });
+
+  it('surfaces AbortError (e.g. AbortSignal.timeout) as AI_NO_IMAGE with friendly text', async () => {
+    const abortErr = new Error('The operation was aborted');
+    abortErr.name = 'AbortError';
+    mockCreate.mockRejectedValue(abortErr);
+    const { generatePrompt, AiError } = await import('../index.js');
+    await expect(generatePrompt('character', { era: '古代' })).rejects.toBeInstanceOf(AiError);
+    await expect(generatePrompt('character', { era: '古代' })).rejects.toMatchObject({
+      code: 'AI_NO_IMAGE',
+      message: expect.stringContaining('中断'),
+    });
+  });
+
+  it('surfaces TimeoutError as AI_NO_IMAGE with friendly text', async () => {
+    const timeoutErr = new Error('Request timed out');
+    timeoutErr.name = 'TimeoutError';
+    mockCreate.mockRejectedValue(timeoutErr);
+    const { generatePrompt } = await import('../index.js');
+    await expect(generatePrompt('character', { era: '古代' })).rejects.toMatchObject({
+      code: 'AI_NO_IMAGE',
+    });
+  });
 });
 
 describe('generateImage', () => {

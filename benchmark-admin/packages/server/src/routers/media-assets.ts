@@ -218,11 +218,15 @@ export const mediaAssetsRouter = t.router({
   // assetId=NULL media row. Used by the /playground page to keep ref-image
   // uploads out of the assets table. media.assetId is nullable in the schema
   // (see shared/db/schema.ts) and no placeholder asset row is created.
+  // mediaType is locked to 'image' — the playground is image-only and the
+  // pre-existing standalone-audio/video paths still go through `create` (which
+  // builds an asset row). Tighten via z.literal so a future audio/video caller
+  // is a deliberate schema change, not an accidental surface widening.
   createStandalone: protectedProcedure
     .input(
       z.object({
         objectKey: z.string().min(1),
-        mediaType: z.enum(['image', 'audio', 'video']).default('image'),
+        mediaType: z.literal('image').default('image'),
         filename: z.string().default(''),
       }),
     )
@@ -234,11 +238,14 @@ export const mediaAssetsRouter = t.router({
           objectKey: input.objectKey,
           source: 'uploaded',
           mediaType: input.mediaType,
+          title: input.filename,
         })
         .returning();
       if (!img) throw new Error('Failed to create standalone media');
 
       const url = await storage.getPresignedUrl(img.objectKey).catch(() => '');
-      return { ...img, url };
+      // Match the sibling `create` return shape so the frontend doesn't have
+      // to discriminate. assetKind is always null for standalone rows.
+      return { ...img, url, assetKind: null };
     }),
 });

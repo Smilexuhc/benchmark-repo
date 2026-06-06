@@ -215,6 +215,9 @@ describe('mediaAssetsRouter', () => {
       expect(result.source).toBe('uploaded');
       expect(result.mediaType).toBe('image');
       expect(result.objectKey).toBe('images/standalone-ref.png');
+      // Return shape matches sibling `create` so the frontend does not have
+      // to discriminate between the two procedures.
+      expect(result.assetKind).toBeNull();
     });
 
     it('does not create any asset row', async () => {
@@ -236,6 +239,39 @@ describe('mediaAssetsRouter', () => {
         objectKey: 'images/default-type.png',
       });
       expect(result.mediaType).toBe('image');
+    });
+
+    it('persists filename into media.title', async () => {
+      const result = await caller.mediaAssets.createStandalone({
+        objectKey: 'images/named.png',
+        filename: 'my-winter-forest.png',
+      });
+      expect(result.title).toBe('my-winter-forest.png');
+    });
+
+    it('falls back to empty title when filename is omitted', async () => {
+      const result = await caller.mediaAssets.createStandalone({
+        objectKey: 'images/no-filename.png',
+      });
+      expect(result.title).toBe('');
+    });
+
+    it('rejects mediaType audio at the zod boundary', async () => {
+      await expect(
+        caller.mediaAssets.createStandalone({
+          objectKey: 'images/should-fail.png',
+          mediaType: 'audio' as unknown as 'image',
+        }),
+      ).rejects.toThrow();
+    });
+
+    it('rejects mediaType video at the zod boundary', async () => {
+      await expect(
+        caller.mediaAssets.createStandalone({
+          objectKey: 'images/should-fail.png',
+          mediaType: 'video' as unknown as 'image',
+        }),
+      ).rejects.toThrow();
     });
 
     it('rejects an empty objectKey at the zod boundary', async () => {

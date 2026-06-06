@@ -1,7 +1,7 @@
 import { TRPCError } from '@trpc/server';
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { z } from 'zod';
-import { assets, media } from '@benchmark-admin/shared/db/schema';
+import { assets, media, type MediaSource } from '@benchmark-admin/shared/db/schema';
 import {
   ExtractFieldsInput,
   GenerateImageInput,
@@ -122,7 +122,7 @@ export const aiRouter = t.router({
           .values({
             assetId: null,
             objectKey,
-            source: 'standalone-generated',
+            source: 'standalone-generated' satisfies MediaSource,
             mediaType: 'image',
           })
           .returning();

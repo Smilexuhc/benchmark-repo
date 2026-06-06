@@ -72,7 +72,7 @@ export async function generatePrompt(
 
 // ── generateImage ─────────────────────────────────────────────────────────────
 // Generates an image via OpenRouter, uploads to TOS, returns the object key.
-// Pass refImageBytes for image-to-image (single ref for scene reverse/multiview,
+// Pass refsBytes for image-to-image (single ref for scene reverse/multiview,
 // multiple refs for the standalone playground). `model` overrides env.IMAGE_MODEL
 // when supplied; the contract-edge whitelist lives in the router (zod enum), not
 // here — this service is a pass-through.
@@ -103,16 +103,16 @@ type ImageApiResponse = {
 
 export function generateImage(
   prompt: string,
-  refImageBytes?: Buffer[],
+  refsBytes?: Buffer[],
   aspectRatio?: string,
   model?: string,
 ): Promise<{ objectKey: string }> {
-  return imageLimit(() => _generateImage(prompt, refImageBytes, aspectRatio, model));
+  return imageLimit(() => _generateImage(prompt, refsBytes, aspectRatio, model));
 }
 
 async function _generateImage(
   prompt: string,
-  refImageBytes?: Buffer[],
+  refsBytes?: Buffer[],
   aspectRatio?: string,
   model?: string,
 ): Promise<{ objectKey: string }> {
@@ -122,10 +122,10 @@ async function _generateImage(
   const size = env.IMAGE_SIZE.trim();
 
   let content: ImageContent;
-  if (refImageBytes && refImageBytes.length > 0) {
+  if (refsBytes && refsBytes.length > 0) {
     content = [
       { type: 'text', text: prompt },
-      ...refImageBytes.map((b) => ({
+      ...refsBytes.map((b) => ({
         type: 'image_url' as const,
         image_url: { url: `data:image/png;base64,${b.toString('base64')}` },
       })),

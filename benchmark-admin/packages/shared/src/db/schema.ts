@@ -56,6 +56,18 @@ export const assets = pgTable(
 // or be a standalone upload used directly as a benchmark item's audio/video media (assetId NULL).
 // title holds the display name of a standalone file (asset-bound files take their name from the asset).
 // Soft-deleted via deletedAt — bytes in object storage are preserved for recovery.
+// media.source is an open TEXT column. The values produced by this codebase
+// today are listed in MediaSource so downstream code (UI switches, queries)
+// has a single source of truth. The column has no DB CHECK constraint —
+// historical / external rows may carry other values; consumers should treat
+// MediaSource as the known-good set and handle unknown values defensively.
+export type MediaSource =
+  | 'uploaded'
+  | 'generated'
+  | 'reverse'
+  | 'multiview'
+  | 'standalone-generated';
+
 export const media = pgTable(
   'media',
   {

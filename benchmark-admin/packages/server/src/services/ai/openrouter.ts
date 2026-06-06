@@ -12,6 +12,14 @@ export class AiError extends Error {
 }
 
 export function translateError(e: unknown): Error {
+  // Abort/timeout from AbortSignal.timeout (e.g. the secondary image fetch when
+  // OpenRouter returns an http URL instead of inlined base64). Detect by Error
+  // .name so we catch both DOMException-style AbortError and explicit message
+  // forms, then surface as the same friendly Chinese AI_NO_IMAGE path the
+  // existing 中断 wording uses on the Python side.
+  if (e instanceof Error && (e.name === 'AbortError' || e.name === 'TimeoutError')) {
+    return new AiError('AI_NO_IMAGE', '接口连接中断：可能出图较慢被中途断开，请重试');
+  }
   const msg = e instanceof Error ? e.message : String(e);
   const low = msg.toLowerCase();
   if (
@@ -26,6 +34,9 @@ export function translateError(e: unknown): Error {
   }
   if (msg.includes('401') || low.includes('unauthorized') || low.includes('api key')) {
     return new AiError('AI_AUTH_FAILED', '接口鉴权失败：请检查 OPENROUTER_API_KEY');
+  }
+  if (low.includes('aborted') || low.includes('timeout') || low.includes('signal is aborted')) {
+    return new AiError('AI_NO_IMAGE', '接口连接中断：可能出图较慢被中途断开，请重试');
   }
   return e instanceof Error ? e : new Error(msg);
 }
