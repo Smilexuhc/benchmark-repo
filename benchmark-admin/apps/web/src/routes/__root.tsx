@@ -1,17 +1,18 @@
-import { Link, Outlet, createRootRoute, useLocation, useNavigate } from '@tanstack/react-router';
-import { useEffect } from 'react';
 import { ConfirmHost, Toaster } from '@/components/feedback';
 import { Button } from '@/components/ui/button';
 import { LightboxProvider } from '@/components/ui/lightbox';
 import { Segmented } from '@/components/ui/segmented';
 import { useSession } from '@/lib/auth-client';
+import { Link, Outlet, createRootRoute, useLocation, useNavigate } from '@tanstack/react-router';
+import { useEffect } from 'react';
 
-type AssetTab = '/characters' | '/scenes' | '/props' | '/benchmark';
+type AssetTab = '/characters' | '/scenes' | '/props' | '/benchmark' | '/playground';
 const TABS: readonly { value: AssetTab; label: string }[] = [
   { value: '/characters', label: '角色资产库' },
   { value: '/scenes', label: '场景资产库' },
   { value: '/props', label: '道具资产库' },
   { value: '/benchmark', label: '题目' },
+  { value: '/playground', label: '生图' },
 ];
 
 function RootLayout() {
