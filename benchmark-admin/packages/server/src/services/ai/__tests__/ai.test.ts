@@ -210,6 +210,122 @@ describe('AI error handling', () => {
   });
 });
 
+describe('generateImage', () => {
+  // A 1×1 transparent PNG is enough to assert the encoded data-URI prefix
+  // without hitting the OpenRouter HTTP fallback path.
+  const PNG_DATA_URI =
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+
+  function mockImageResponse(): void {
+    mockCreate.mockResolvedValue({
+      choices: [{ message: { images: [{ image_url: { url: PNG_DATA_URI } }] } }],
+    });
+  }
+
+  function lastCallParams(): {
+    model: string;
+    messages: Array<{ role: 'user'; content: unknown }>;
+    extra_body: { image_config: { aspect_ratio: string; image_size: string } };
+  } {
+    return mockCreate.mock.calls[0]?.[0] as {
+      model: string;
+      messages: Array<{ role: 'user'; content: unknown }>;
+      extra_body: { image_config: { aspect_ratio: string; image_size: string } };
+    };
+  }
+
+  it('sends the prompt as a plain string when no refs are provided', async () => {
+    mockImageResponse();
+    const { generateImage } = await import('../index.js');
+    await generateImage('a winter forest');
+    expect(lastCallParams().messages[0]?.content).toBe('a winter forest');
+  });
+
+  it('sends a content array with one image_url part when one ref is provided', async () => {
+    mockImageResponse();
+    const { generateImage } = await import('../index.js');
+    await generateImage('change season', [Buffer.from('ref-bytes-1')]);
+    const content = lastCallParams().messages[0]?.content as Array<{
+      type: string;
+      text?: string;
+      image_url?: { url: string };
+    }>;
+    expect(Array.isArray(content)).toBe(true);
+    expect(content).toHaveLength(2);
+    expect(content[0]).toEqual({ type: 'text', text: 'change season' });
+    expect(content[1]?.type).toBe('image_url');
+    expect(content[1]?.image_url?.url).toBe(
+      `data:image/png;base64,${Buffer.from('ref-bytes-1').toString('base64')}`,
+    );
+  });
+
+  it('appends one image_url part per ref, in caller order', async () => {
+    mockImageResponse();
+    const { generateImage } = await import('../index.js');
+    const refs = [Buffer.from('A'), Buffer.from('B'), Buffer.from('C')];
+    await generateImage('compose', refs);
+    const content = lastCallParams().messages[0]?.content as Array<{
+      type: string;
+      text?: string;
+      image_url?: { url: string };
+    }>;
+    expect(content).toHaveLength(4); // 1 text + 3 images
+    expect(content.slice(1).map((c) => c.image_url?.url)).toEqual(
+      refs.map((b) => `data:image/png;base64,${b.toString('base64')}`),
+    );
+  });
+
+  it('treats an empty refs array as no refs (plain string content)', async () => {
+    mockImageResponse();
+    const { generateImage } = await import('../index.js');
+    await generateImage('text-only', []);
+    expect(lastCallParams().messages[0]?.content).toBe('text-only');
+  });
+
+  it('uses env.IMAGE_ASPECT_RATIO when aspectRatio is omitted', async () => {
+    mockImageResponse();
+    const { generateImage } = await import('../index.js');
+    await generateImage('any');
+    expect(lastCallParams().extra_body.image_config.aspect_ratio).toBe('3:2');
+  });
+
+  it('passes the aspectRatio override through to image_config', async () => {
+    mockImageResponse();
+    const { generateImage } = await import('../index.js');
+    await generateImage('any', undefined, '16:9');
+    expect(lastCallParams().extra_body.image_config.aspect_ratio).toBe('16:9');
+  });
+
+  it('defaults the model to env.IMAGE_MODEL', async () => {
+    mockImageResponse();
+    const { generateImage } = await import('../index.js');
+    await generateImage('any');
+    expect(lastCallParams().model).toBe('openai/dall-e-3');
+  });
+
+  it('passes the model override through verbatim', async () => {
+    mockImageResponse();
+    const { generateImage } = await import('../index.js');
+    await generateImage('any', undefined, undefined, 'openai/gpt-image-2');
+    expect(lastCallParams().model).toBe('openai/gpt-image-2');
+  });
+
+  it('rejects empty prompts before calling the model', async () => {
+    const { generateImage } = await import('../index.js');
+    await expect(generateImage('   ')).rejects.toThrow('提示词为空');
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it('translates OpenRouter failures via translateError (401 → AI_AUTH_FAILED)', async () => {
+    mockCreate.mockRejectedValue(new Error('401 unauthorized'));
+    const { generateImage, AiError } = await import('../index.js');
+    await expect(generateImage('any', [Buffer.from('x')])).rejects.toBeInstanceOf(AiError);
+    await expect(generateImage('any', [Buffer.from('x')])).rejects.toMatchObject({
+      code: 'AI_AUTH_FAILED',
+    });
+  });
+});
+
 describe('parseJson', () => {
   it('parses plain JSON', async () => {
     const { parseJson } = await import('../openrouter.js');

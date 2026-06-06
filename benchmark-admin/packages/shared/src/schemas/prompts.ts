@@ -34,7 +34,20 @@ export const GenerateImageInput = z.object({
   aspectRatio: z.string().optional(),
 });
 
+// Standalone playground generation: not bound to a character/scene/prop
+// asset. aspectRatio and model are closed enums — the contract-edge whitelist
+// for v1 is single-model. refImages references existing media rows (uploaded
+// via mediaAssets.createStandalone) and is capped to keep the OpenRouter
+// content array bounded.
+export const GenerateStandaloneImageInput = z.object({
+  prompt: z.string().min(1),
+  aspectRatio: z.enum(['16:9', '1:1', '3:2', '2:3', '9:16']).default('16:9'),
+  model: z.enum(['gpt-image-2']).default('gpt-image-2'),
+  refImages: z.array(z.number().int().positive()).max(4).optional(),
+});
+
 export type GeneratePromptInputType = z.infer<typeof GeneratePromptInput>;
 export type ExtractFieldsInputType = z.infer<typeof ExtractFieldsInput>;
 export type ExtractFieldsResultType = z.infer<typeof ExtractFieldsResult>;
 export type GenerateImageInputType = z.infer<typeof GenerateImageInput>;
+export type GenerateStandaloneImageInputType = z.infer<typeof GenerateStandaloneImageInput>;

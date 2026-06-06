@@ -204,6 +204,54 @@ describe('mediaAssetsRouter', () => {
     }
   });
 
+  describe('createStandalone', () => {
+    it('inserts a media row with assetId=NULL and source=uploaded', async () => {
+      const result = await caller.mediaAssets.createStandalone({
+        objectKey: 'images/standalone-ref.png',
+      });
+
+      expect(typeof result.id).toBe('number');
+      expect(result.assetId).toBeNull();
+      expect(result.source).toBe('uploaded');
+      expect(result.mediaType).toBe('image');
+      expect(result.objectKey).toBe('images/standalone-ref.png');
+    });
+
+    it('does not create any asset row', async () => {
+      const { getTestDb } = await import('../../db/__tests__/pglite.js');
+      const testDb = await getTestDb();
+      const { assets } = await import('@benchmark-admin/shared/db/schema');
+
+      const beforeRows = await testDb.select().from(assets);
+      await caller.mediaAssets.createStandalone({
+        objectKey: 'images/no-asset-side-effect.png',
+      });
+      const afterRows = await testDb.select().from(assets);
+
+      expect(afterRows.length).toBe(beforeRows.length);
+    });
+
+    it('defaults mediaType to image when omitted', async () => {
+      const result = await caller.mediaAssets.createStandalone({
+        objectKey: 'images/default-type.png',
+      });
+      expect(result.mediaType).toBe('image');
+    });
+
+    it('rejects an empty objectKey at the zod boundary', async () => {
+      await expect(
+        caller.mediaAssets.createStandalone({ objectKey: '' }),
+      ).rejects.toThrow();
+    });
+
+    it('returns the presigned URL from storage', async () => {
+      const result = await caller.mediaAssets.createStandalone({
+        objectKey: 'images/with-url.png',
+      });
+      expect(result.url).toBe('https://cdn.example.com/images/with-url.png');
+    });
+  });
+
   it('paginates with cursor', async () => {
     const asset = await caller.assets.create({ kind: 'prop', name: 'Pagination Asset', data: {} });
     // Create 55 images to exceed the LIMIT of 50

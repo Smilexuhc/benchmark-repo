@@ -213,4 +213,32 @@ export const mediaAssetsRouter = t.router({
       const url = await storage.getPresignedUrl(img.objectKey).catch(() => '');
       return { ...img, url, assetKind: asset.kind };
     }),
+
+  // Standalone media: persists a previously-uploaded object as an
+  // assetId=NULL media row. Used by the /playground page to keep ref-image
+  // uploads out of the assets table. media.assetId is nullable in the schema
+  // (see shared/db/schema.ts) and no placeholder asset row is created.
+  createStandalone: protectedProcedure
+    .input(
+      z.object({
+        objectKey: z.string().min(1),
+        mediaType: z.enum(['image', 'audio', 'video']).default('image'),
+        filename: z.string().default(''),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      const [img] = await db
+        .insert(media)
+        .values({
+          assetId: null,
+          objectKey: input.objectKey,
+          source: 'uploaded',
+          mediaType: input.mediaType,
+        })
+        .returning();
+      if (!img) throw new Error('Failed to create standalone media');
+
+      const url = await storage.getPresignedUrl(img.objectKey).catch(() => '');
+      return { ...img, url };
+    }),
 });

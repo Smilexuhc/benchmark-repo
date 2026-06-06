@@ -106,5 +106,113 @@ describe('aiRouter', () => {
 
       expect(getBytes).toHaveBeenCalledWith('images/ref.png');
     });
+
+    it('wraps a single ref in an array when calling ai.generateImage', async () => {
+      const { generateImage } = await import('../../services/ai/index.js');
+      const asset = await caller.assets.create({ kind: 'character', name: 'Wrap Test', data: {} });
+      const img = await caller.assets.attachImage({
+        id: asset.id,
+        objectKey: 'images/wrap-ref.png',
+        source: 'test',
+      });
+
+      await caller.ai.generateImage({
+        kind: 'character',
+        id: asset.id,
+        prompt: 'wrap test',
+        refImage: img.id,
+      });
+
+      const lastCallArgs = vi.mocked(generateImage).mock.calls.at(-1);
+      expect(lastCallArgs?.[1]).toBeInstanceOf(Array);
+      expect(lastCallArgs?.[1]).toHaveLength(1);
+    });
+  });
+
+  describe('generateStandalone', () => {
+    it('generates with no refs and persists as assetId=NULL, source=standalone-generated', async () => {
+      const { generateImage } = await import('../../services/ai/index.js');
+      const result = await caller.ai.generateStandalone({
+        prompt: 'a winter forest',
+        aspectRatio: '16:9',
+      });
+
+      expect(result.assetId).toBeNull();
+      expect(result.source).toBe('standalone-generated');
+      expect(result.mediaType).toBe('image');
+      expect(result.url).toMatch(/^https:\/\//);
+
+      const lastCallArgs = vi.mocked(generateImage).mock.calls.at(-1);
+      // (prompt, refs, aspectRatio, model)
+      expect(lastCallArgs?.[0]).toBe('a winter forest');
+      expect(lastCallArgs?.[1]).toBeUndefined();
+      expect(lastCallArgs?.[2]).toBe('16:9');
+      expect(lastCallArgs?.[3]).toBe('gpt-image-2');
+    });
+
+    it('passes ref bytes in caller order', async () => {
+      const { generateImage } = await import('../../services/ai/index.js');
+      // Seed two standalone refs directly so we don't depend on assets at all.
+      const ref1 = await caller.mediaAssets.createStandalone({ objectKey: 'images/r1.png' });
+      const ref2 = await caller.mediaAssets.createStandalone({ objectKey: 'images/r2.png' });
+
+      await caller.ai.generateStandalone({
+        prompt: 'compose',
+        refImages: [ref2.id, ref1.id], // reversed on purpose
+      });
+
+      const lastCallArgs = vi.mocked(generateImage).mock.calls.at(-1);
+      const refs = lastCallArgs?.[1] as Buffer[] | undefined;
+      expect(refs).toBeInstanceOf(Array);
+      expect(refs).toHaveLength(2);
+    });
+
+    it('defaults aspectRatio to 16:9 and model to gpt-image-2 when omitted', async () => {
+      const { generateImage } = await import('../../services/ai/index.js');
+      await caller.ai.generateStandalone({ prompt: 'defaults' });
+
+      const lastCallArgs = vi.mocked(generateImage).mock.calls.at(-1);
+      expect(lastCallArgs?.[2]).toBe('16:9');
+      expect(lastCallArgs?.[3]).toBe('gpt-image-2');
+    });
+
+    it('rejects a non-existent ref id with BAD_REQUEST', async () => {
+      await expect(
+        caller.ai.generateStandalone({ prompt: 'x', refImages: [999_999_999] }),
+      ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+    });
+
+    it('rejects an empty prompt at the zod boundary', async () => {
+      await expect(caller.ai.generateStandalone({ prompt: '' })).rejects.toThrow();
+    });
+
+    it('rejects more than 4 ref images at the zod boundary', async () => {
+      await expect(
+        caller.ai.generateStandalone({
+          prompt: 'too many',
+          refImages: [1, 2, 3, 4, 5],
+        }),
+      ).rejects.toThrow();
+    });
+
+    it('rejects a model outside the whitelist', async () => {
+      // Cast to bypass TS — the .input() schema is the runtime contract under
+      // test here; we want the zod parse to reject 'banana' at runtime.
+      await expect(
+        caller.ai.generateStandalone({
+          prompt: 'x',
+          model: 'banana' as unknown as 'gpt-image-2',
+        }),
+      ).rejects.toThrow();
+    });
+
+    it('rejects an aspectRatio outside the whitelist', async () => {
+      await expect(
+        caller.ai.generateStandalone({
+          prompt: 'x',
+          aspectRatio: '21:9' as unknown as '16:9',
+        }),
+      ).rejects.toThrow();
+    });
   });
 });
