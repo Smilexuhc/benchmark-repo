@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as PlaygroundRouteImport } from './routes/playground'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as BenchmarkRouteImport } from './routes/benchmark'
 import { Route as IndexRouteImport } from './routes/index'
@@ -16,6 +17,11 @@ import { Route as assetsScenesRouteImport } from './routes/(assets)/scenes'
 import { Route as assetsPropsRouteImport } from './routes/(assets)/props'
 import { Route as assetsCharactersRouteImport } from './routes/(assets)/characters'
 
+const PlaygroundRoute = PlaygroundRouteImport.update({
+  id: '/playground',
+  path: '/playground',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
@@ -51,6 +57,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/benchmark': typeof BenchmarkRoute
   '/login': typeof LoginRoute
+  '/playground': typeof PlaygroundRoute
   '/characters': typeof assetsCharactersRoute
   '/props': typeof assetsPropsRoute
   '/scenes': typeof assetsScenesRoute
@@ -59,6 +66,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/benchmark': typeof BenchmarkRoute
   '/login': typeof LoginRoute
+  '/playground': typeof PlaygroundRoute
   '/characters': typeof assetsCharactersRoute
   '/props': typeof assetsPropsRoute
   '/scenes': typeof assetsScenesRoute
@@ -68,6 +76,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/benchmark': typeof BenchmarkRoute
   '/login': typeof LoginRoute
+  '/playground': typeof PlaygroundRoute
   '/(assets)/characters': typeof assetsCharactersRoute
   '/(assets)/props': typeof assetsPropsRoute
   '/(assets)/scenes': typeof assetsScenesRoute
@@ -78,16 +87,25 @@ export interface FileRouteTypes {
     | '/'
     | '/benchmark'
     | '/login'
+    | '/playground'
     | '/characters'
     | '/props'
     | '/scenes'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/benchmark' | '/login' | '/characters' | '/props' | '/scenes'
+  to:
+    | '/'
+    | '/benchmark'
+    | '/login'
+    | '/playground'
+    | '/characters'
+    | '/props'
+    | '/scenes'
   id:
     | '__root__'
     | '/'
     | '/benchmark'
     | '/login'
+    | '/playground'
     | '/(assets)/characters'
     | '/(assets)/props'
     | '/(assets)/scenes'
@@ -97,6 +115,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   BenchmarkRoute: typeof BenchmarkRoute
   LoginRoute: typeof LoginRoute
+  PlaygroundRoute: typeof PlaygroundRoute
   assetsCharactersRoute: typeof assetsCharactersRoute
   assetsPropsRoute: typeof assetsPropsRoute
   assetsScenesRoute: typeof assetsScenesRoute
@@ -104,6 +123,13 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/playground': {
+      id: '/playground'
+      path: '/playground'
+      fullPath: '/playground'
+      preLoaderRoute: typeof PlaygroundRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/login': {
       id: '/login'
       path: '/login'
@@ -153,6 +179,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   BenchmarkRoute: BenchmarkRoute,
   LoginRoute: LoginRoute,
+  PlaygroundRoute: PlaygroundRoute,
   assetsCharactersRoute: assetsCharactersRoute,
   assetsPropsRoute: assetsPropsRoute,
   assetsScenesRoute: assetsScenesRoute,
