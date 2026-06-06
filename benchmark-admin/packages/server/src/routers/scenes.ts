@@ -49,7 +49,7 @@ export const scenesRouter = t.router({
           ? 'Generate a reverse shot of this scene from the opposite perspective.'
           : 'Generate a 4-view multiview composition showing multiple angles of this scene.';
 
-      const { objectKey } = await ai.generateImage(prompt, coverBytes);
+      const { objectKey } = await ai.generateImage(prompt, [coverBytes]);
 
       // The image is already in TOS; if the link insert fails, clean up the
       // orphaned object rather than leaving it stranded in the bucket.

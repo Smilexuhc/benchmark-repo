@@ -72,7 +72,10 @@ export async function generatePrompt(
 
 // ── generateImage ─────────────────────────────────────────────────────────────
 // Generates an image via OpenRouter, uploads to TOS, returns the object key.
-// Pass refImageBytes for image-to-image (scene reverse/multiview).
+// Pass refsBytes for image-to-image (single ref for scene reverse/multiview,
+// multiple refs for the standalone playground). `model` overrides env.IMAGE_MODEL
+// when supplied; the contract-edge whitelist lives in the router (zod enum), not
+// here — this service is a pass-through.
 
 type ImageContent =
   | string
@@ -100,16 +103,18 @@ type ImageApiResponse = {
 
 export function generateImage(
   prompt: string,
-  refImageBytes?: Buffer,
+  refsBytes?: Buffer[],
   aspectRatio?: string,
+  model?: string,
 ): Promise<{ objectKey: string }> {
-  return imageLimit(() => _generateImage(prompt, refImageBytes, aspectRatio));
+  return imageLimit(() => _generateImage(prompt, refsBytes, aspectRatio, model));
 }
 
 async function _generateImage(
   prompt: string,
-  refImageBytes?: Buffer,
+  refsBytes?: Buffer[],
   aspectRatio?: string,
+  model?: string,
 ): Promise<{ objectKey: string }> {
   if (!prompt.trim()) throw new Error('提示词为空，无法生成图片');
 
@@ -117,18 +122,20 @@ async function _generateImage(
   const size = env.IMAGE_SIZE.trim();
 
   let content: ImageContent;
-  if (refImageBytes) {
-    const b64 = refImageBytes.toString('base64');
+  if (refsBytes && refsBytes.length > 0) {
     content = [
       { type: 'text', text: prompt },
-      { type: 'image_url', image_url: { url: `data:image/png;base64,${b64}` } },
+      ...refsBytes.map((b) => ({
+        type: 'image_url' as const,
+        image_url: { url: `data:image/png;base64,${b.toString('base64')}` },
+      })),
     ];
   } else {
     content = prompt;
   }
 
   const params: ImageApiParams = {
-    model: env.IMAGE_MODEL,
+    model: model ?? env.IMAGE_MODEL,
     messages: [{ role: 'user', content }],
     extra_body: {
       modalities: ['image', 'text'],

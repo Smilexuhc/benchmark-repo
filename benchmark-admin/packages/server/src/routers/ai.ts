@@ -1,11 +1,12 @@
 import { TRPCError } from '@trpc/server';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { z } from 'zod';
-import { assets, media } from '@benchmark-admin/shared/db/schema';
+import { assets, media, type MediaSource } from '@benchmark-admin/shared/db/schema';
 import {
   ExtractFieldsInput,
   GenerateImageInput,
   GeneratePromptInput,
+  GenerateStandaloneImageInput,
 } from '@benchmark-admin/shared/schemas/prompts';
 import type { CharacterData, PropData, SceneData } from '@benchmark-admin/shared/schemas/assets';
 import { db } from '../db/index.js';
@@ -48,7 +49,11 @@ export const aiRouter = t.router({
       }
     }
 
-    const { objectKey } = await ai.generateImage(input.prompt, refBytes, input.aspectRatio);
+    const { objectKey } = await ai.generateImage(
+      input.prompt,
+      refBytes ? [refBytes] : undefined,
+      input.aspectRatio,
+    );
 
     let img: typeof media.$inferSelect | undefined;
     try {
@@ -70,6 +75,71 @@ export const aiRouter = t.router({
     const url = await storage.getPresignedUrl(objectKey);
     return { ...img, url };
   }),
+
+  // Standalone playground generation. Not bound to any asset — both the
+  // reference images and the result land as assetId=NULL media rows. The
+  // contract-edge whitelist (gpt-image-2 only, 5 fixed aspect ratios, ≤4 refs)
+  // lives in GenerateStandaloneImageInput; this handler is a thin composition
+  // over the existing storage + ai.generateImage pipeline.
+  generateStandalone: protectedProcedure
+    .input(GenerateStandaloneImageInput)
+    .mutation(async ({ input }) => {
+      // Fetch ref-image bytes in the order the client listed them so the
+      // model sees prompt-text first followed by image_url parts in the
+      // user-meaningful sequence (most-recent / hero ref first, etc.).
+      let refBytes: Buffer[] | undefined;
+      if (input.refImages && input.refImages.length > 0) {
+        const rows = await db
+          .select({ id: media.id, objectKey: media.objectKey })
+          .from(media)
+          .where(and(inArray(media.id, input.refImages), isNull(media.deletedAt)));
+        const byId = new Map(rows.map((r) => [r.id, r.objectKey] as const));
+        const ordered: string[] = [];
+        for (const id of input.refImages) {
+          const key = byId.get(id);
+          if (!key) {
+            throw new TRPCError({
+              code: 'BAD_REQUEST',
+              message: `Ref image ${id} not found`,
+            });
+          }
+          ordered.push(key);
+        }
+        refBytes = await Promise.all(ordered.map((k) => storage.getBytes(k)));
+      }
+
+      const { objectKey } = await ai.generateImage(
+        input.prompt,
+        refBytes,
+        input.aspectRatio,
+        input.model,
+      );
+
+      let img: typeof media.$inferSelect | undefined;
+      try {
+        const rows = await db
+          .insert(media)
+          .values({
+            assetId: null,
+            objectKey,
+            source: 'standalone-generated' satisfies MediaSource,
+            mediaType: 'image',
+          })
+          .returning();
+        img = rows[0];
+      } catch (err) {
+        // DB insert failed — best-effort clean up the already-uploaded TOS object
+        storage.deleteObject(objectKey).catch(() => {});
+        throw err;
+      }
+      if (!img) {
+        storage.deleteObject(objectKey).catch(() => {});
+        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      }
+
+      const url = await storage.getPresignedUrl(objectKey);
+      return { ...img, url };
+    }),
 
   batchRegenerate: protectedProcedure
     .input(

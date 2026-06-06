@@ -85,9 +85,11 @@ describe('scenesRouter', () => {
     expect(result.assetId).toBe(scene.id);
     expect(result.url).toContain('generated.png');
     expect(mockGenerateImage).toHaveBeenCalledOnce();
-    // AI should have been called with the cover bytes
-    const [, refBytes] = mockGenerateImage.mock.calls[0] as [string, Buffer];
+    // AI should have been called with the cover bytes (wrapped in an array
+    // after the multi-ref signature change — see services/ai/index.ts)
+    const [, refBytes] = mockGenerateImage.mock.calls[0] as [string, Buffer[]];
     expect(refBytes).toBeDefined();
+    expect(refBytes).toHaveLength(1);
   });
 
   it('generateView(multiview) persists with source:multiview', async () => {
