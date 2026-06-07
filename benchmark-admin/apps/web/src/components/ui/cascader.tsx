@@ -98,6 +98,9 @@ export function Cascader({
 
   const commitLeaf = useCallback(
     (path: string[]) => {
+      // Always close on a leaf commit — even if path-walking fails we want the
+      // popup gone, otherwise the user is stuck having to click outside.
+      setOpen(false);
       const lbls = pathLabels(options, path);
       // Walk to the leaf node so onChange can hand back the full CategoryOption
       // (callers use this to read .definition etc.)
@@ -109,7 +112,6 @@ export function Cascader({
       }
       if (!leaf) return;
       onChange(path, lbls, leaf);
-      setOpen(false);
     },
     [options, onChange],
   );

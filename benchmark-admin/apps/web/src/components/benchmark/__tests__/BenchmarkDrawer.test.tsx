@@ -137,6 +137,9 @@ describe('BenchmarkDrawer', () => {
     expect(
       screen.getByText(/检查文本指令中的主体、动作、场景、情绪和基础要求是否被正确执行/),
     ).toBeInTheDocument();
+    // Popover must close on the L3 leaf click — selecting the deepest level
+    // shouldn't require an extra outside-click to dismiss the panel.
+    expect(screen.queryByRole('option', { name: /1 单镜头/ })).toBeNull();
   });
 
   it('sends all four category fields in the create payload', async () => {
