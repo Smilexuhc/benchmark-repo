@@ -5,3 +5,4 @@ export {
   type MediaKind,
   type UploadValidation,
 } from './validate.js';
+export { verifyUploadedObject } from './verifyObject.js';

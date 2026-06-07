@@ -33,6 +33,9 @@ vi.mock('../../services/storage/index.js', () => ({
   putObject: mockPutObject,
   newObjectKey: mockNewObjectKey,
   deleteObject: vi.fn(async () => undefined),
+  // BEN-27: `attachImage` runs verifyUploadedObject → mock image-shaped probe.
+  headObject: vi.fn(async () => ({ contentType: 'image/png', contentLength: 1024 })),
+  getRange: vi.fn(async () => Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])),
 }));
 
 const mockGenerateImage = vi.fn(async () => ({ objectKey: 'images/generated.png' }));

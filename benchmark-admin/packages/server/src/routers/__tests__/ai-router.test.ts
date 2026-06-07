@@ -29,6 +29,9 @@ vi.mock('../../services/storage/index.js', () => ({
   newObjectKey: vi.fn(() => 'images/generated.png'),
   deleteObject: vi.fn(async () => undefined),
   healthCheck: vi.fn(async () => true),
+  // BEN-27: attachImage / createStandalone run verifyUploadedObject.
+  headObject: vi.fn(async () => ({ contentType: 'image/png', contentLength: 1024 })),
+  getRange: vi.fn(async () => Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])),
 }));
 
 vi.mock('../../services/ai/index.js', () => ({

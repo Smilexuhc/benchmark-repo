@@ -10,6 +10,7 @@ import {
 import { db } from '../db/index.js';
 import { softDeleteMedia } from '../db/soft-delete.js';
 import * as storage from '../services/storage/index.js';
+import { verifyUploadedObject } from '../services/upload/verifyObject.js';
 import { t } from '../trpc/init.js';
 import { protectedProcedure } from '../trpc/procedures.js';
 
@@ -380,26 +381,36 @@ export const assetsRouter = t.router({
       }),
     )
     .mutation(async ({ input }) => {
-      const [asset] = await db
-        .select({ id: assets.id })
-        .from(assets)
-        .where(eq(assets.id, input.id))
-        .limit(1);
-      if (!asset) throw new TRPCError({ code: 'NOT_FOUND' });
+      // BEN-27: verify the just-uploaded object before persisting any DB row.
+      // Any throw — verify failure, missing parent asset, or DB failure — must
+      // delete the TOS object so a failed attach cannot leave an orphan blob.
+      try {
+        await verifyUploadedObject(input.objectKey, 'image');
 
-      const [img] = await db
-        .insert(media)
-        .values({
-          assetId: input.id,
-          objectKey: input.objectKey,
-          source: input.source,
-          mediaType: 'image',
-        })
-        .returning();
-      if (!img) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+        const [asset] = await db
+          .select({ id: assets.id })
+          .from(assets)
+          .where(eq(assets.id, input.id))
+          .limit(1);
+        if (!asset) throw new TRPCError({ code: 'NOT_FOUND' });
 
-      const url = await storage.getPresignedUrl(img.objectKey);
-      return { ...img, url };
+        const [img] = await db
+          .insert(media)
+          .values({
+            assetId: input.id,
+            objectKey: input.objectKey,
+            source: input.source,
+            mediaType: 'image',
+          })
+          .returning();
+        if (!img) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+
+        const url = await storage.getPresignedUrl(img.objectKey);
+        return { ...img, url };
+      } catch (err) {
+        await storage.deleteObject(input.objectKey).catch(() => undefined);
+        throw err;
+      }
     }),
 
   deleteImage: protectedProcedure
