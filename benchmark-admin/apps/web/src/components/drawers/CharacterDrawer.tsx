@@ -199,7 +199,6 @@ export function CharacterDrawer({
       const { uploadUrl, objectKey } = await getUploadUrl.mutateAsync({
         mediaType: 'image',
         filename: file.name,
-        contentType: file.type || 'application/octet-stream',
       });
       const putRes = await fetch(uploadUrl, {
         method: 'PUT',

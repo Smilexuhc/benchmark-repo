@@ -24,9 +24,12 @@ vi.mock('../../db/index.js', async () => {
 
 vi.mock('../../services/storage/index.js', () => ({
   getPresignedUrl: vi.fn(async (key: string) => `https://cdn.example.com/${key}`),
+  getPresignedPutUrl: vi.fn(async (key: string) => `https://cdn.example.com/put/${key}`),
   getBytes: vi.fn(async () => Buffer.from('fake-bytes')),
   putObject: vi.fn(async () => undefined),
-  newObjectKey: vi.fn(() => 'images/test.png'),
+  newObjectKey: vi.fn(
+    (ext: string, prefix: 'images' | 'audios' | 'videos') => `${prefix}/test${ext}`,
+  ),
   deleteObject: vi.fn(async () => undefined),
   healthCheck: vi.fn(async () => true),
 }));
@@ -285,6 +288,39 @@ describe('mediaAssetsRouter', () => {
         objectKey: 'images/with-url.png',
       });
       expect(result.url).toBe('https://cdn.example.com/images/with-url.png');
+    });
+  });
+
+  describe('getUploadUrl', () => {
+    it('rejects extensions outside the allowlist', async () => {
+      await expect(
+        caller.mediaAssets.getUploadUrl({ mediaType: 'image', filename: 'malware.exe' }),
+      ).rejects.toThrow(/Unsupported file type/);
+    });
+
+    it('rejects when mediaType does not match the extension family', async () => {
+      await expect(
+        caller.mediaAssets.getUploadUrl({ mediaType: 'image', filename: 'foo.mp3' }),
+      ).rejects.toThrow(/Unsupported file type/);
+    });
+
+    it('signs with the server-authoritative contentType from the allowlist', async () => {
+      const storage = await import('../../services/storage/index.js');
+      const putUrlMock = vi.mocked(storage.getPresignedPutUrl);
+      putUrlMock.mockClear();
+
+      const result = await caller.mediaAssets.getUploadUrl({
+        mediaType: 'image',
+        filename: 'photo.PNG',
+      });
+
+      expect(result).toEqual({
+        uploadUrl: expect.stringMatching(/^https:\/\//),
+        objectKey: expect.stringMatching(/^images\//),
+      });
+      // The contentType the server signs with is `image/png` from
+      // EXT_TO_CONTENT_TYPE, not anything the client could have sent.
+      expect(putUrlMock).toHaveBeenCalledWith(expect.any(String), 'image/png');
     });
   });
 
