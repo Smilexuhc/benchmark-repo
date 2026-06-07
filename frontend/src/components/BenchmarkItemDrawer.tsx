@@ -467,6 +467,10 @@ export default function BenchmarkItemDrawer({
   const [selectedMedia, setSelectedMedia] = useState<Record<string, MediaAsset[]>>({})
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  // Controlled to guarantee the popup closes the moment a full L3 path is
+  // chosen — relying on AntD's default close-on-leaf behaviour was leaving the
+  // panel open until the user clicked outside.
+  const [cascaderOpen, setCascaderOpen] = useState(false)
 
   useEffect(() => {
     if (!open) return
@@ -550,6 +554,8 @@ export default function BenchmarkItemDrawer({
         <div style={{ gridColumn: '1 / -1' }}>
           <Field label="新分类">
             <Cascader
+              open={cascaderOpen}
+              onDropdownVisibleChange={setCascaderOpen}
               value={findCascaderValue(form.category_l1, form.category_l2, form.category_l3)}
               onChange={(value) => {
                 const [l1 = '', l2 = '', l3 = ''] = (value ?? []) as string[]
@@ -557,6 +563,7 @@ export default function BenchmarkItemDrawer({
                 set('category_l2', l2)
                 set('category_l3', l3)
                 set('category_definition', findCategoryDefinition(l1, l2, l3))
+                setCascaderOpen(false)
               }}
               options={QUESTION_TYPE_OPTIONS}
               placeholder="依次选择 一级分类 → 二级分类 → 三级分类"
