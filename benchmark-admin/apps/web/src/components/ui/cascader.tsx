@@ -99,7 +99,7 @@ export function Cascader({
       document.removeEventListener('mousedown', onDocClick);
       document.removeEventListener('keydown', onKey);
     };
-  }, [open]);
+  }, [open, setOpen]);
 
   // Walk `active` to produce one column per depth that still has options. We
   // always show at least the root column so the user can pick from L1.
@@ -131,7 +131,7 @@ export function Cascader({
       if (!leaf) return;
       onChange(path, lbls, leaf);
     },
-    [options, onChange],
+    [options, onChange, setOpen],
   );
 
   function onRowClick(depth: number, opt: CascaderOption) {
