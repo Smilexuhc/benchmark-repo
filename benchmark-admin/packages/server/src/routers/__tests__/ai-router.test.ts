@@ -63,6 +63,28 @@ describe('aiRouter', () => {
       });
       expect(result).toEqual({ prompt: 'A beautiful character portrait' });
     });
+
+    it('forwards the free-text description to the AI service', async () => {
+      // Regression for BEN-31 round 2: the drawer's "自由描述" field was being
+      // dropped at the router boundary, so the user's natural-language intent
+      // never reached the model and the generated prompt was wildly off-topic
+      // (medieval tavern for a modern-apartment kitchen).
+      const aiSvc = await import('../../services/ai/index.js');
+      const spy = vi.mocked(aiSvc.generatePrompt);
+      spy.mockClear();
+
+      await caller.ai.generatePrompt({
+        kind: 'scene',
+        data: { scene_type: '室内' },
+        description: '现代公寓的厨房，包括冰箱灶台等。',
+      });
+
+      expect(spy).toHaveBeenCalledWith(
+        'scene',
+        { scene_type: '室内' },
+        '现代公寓的厨房，包括冰箱灶台等。',
+      );
+    });
   });
 
   describe('extractFields', () => {

@@ -3,9 +3,14 @@ import { CharacterDataSchema, PropDataSchema, SceneDataSchema } from './assets.j
 
 // ── AI router I/O (§2C aiRouter) ──────────────────────────────────────────────
 
+// `description` is the user's free-text "自由描述" field. When non-empty the
+// builders bypass the structured `data` path entirely and feed the description
+// straight to the model — without this field the user's intent (e.g. "现代公寓
+// 的厨房") never reached the AI and the model hallucinated unrelated scenes.
 export const GeneratePromptInput = z.object({
   kind: z.enum(['character', 'scene', 'prop']),
   data: z.record(z.unknown()),
+  description: z.string().optional(),
 });
 
 export const GeneratePromptResult = z.object({

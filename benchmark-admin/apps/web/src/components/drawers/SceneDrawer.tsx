@@ -129,7 +129,12 @@ export function SceneDrawer({
     try {
       const v = form.getValues();
       const data = buildPayload(v).data;
-      const { prompt } = await ctx.generatePrompt.mutateAsync({ kind: 'scene', data });
+      const description = (v.description ?? '').trim() || undefined;
+      const { prompt } = await ctx.generatePrompt.mutateAsync({
+        kind: 'scene',
+        data,
+        description,
+      });
       form.setValue('prompt', prompt, { shouldDirty: true });
     } catch (e) {
       ctx.setAiError(e instanceof Error ? e.message : '生成失败');
