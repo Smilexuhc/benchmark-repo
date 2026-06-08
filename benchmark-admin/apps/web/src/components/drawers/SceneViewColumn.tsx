@@ -1,7 +1,8 @@
 import { LazyImage } from '@/components/asset-library/LazyImage';
 import { Button } from '@/components/ui/button';
+import { useLightbox } from '@/lib/lightbox-context';
 import { trpc } from '@/lib/trpc';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 
 // Legacy SceneViewColumn shape: header "多视角", two side-by-side tiles labelled
 // "正反打" and "4视图", each with a 96px-tall preview slot. We keep admin's
@@ -25,6 +26,8 @@ export type SceneViewColumnProps = {
 
 export function SceneViewColumn({ sceneId, images, hasCover, onAfter }: SceneViewColumnProps) {
   const generate = trpc.scenes.generateView.useMutation();
+  const lightbox = useLightbox();
+  const tileRefs = useRef<Partial<Record<Mode, HTMLElement | null>>>({});
   const [busyMode, setBusyMode] = useState<Mode | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -72,11 +75,29 @@ export function SceneViewColumn({ sceneId, images, hasCover, onAfter }: SceneVie
                   <span>约 2 分钟…</span>
                 </div>
               ) : img ? (
-                <LazyImage
-                  src={img.url}
-                  alt={label}
-                  className="h-24 w-full rounded bg-[hsl(var(--muted))] object-contain"
-                />
+                <button
+                  type="button"
+                  ref={(el) => {
+                    tileRefs.current[mode] = el;
+                  }}
+                  onClick={() => {
+                    const triggerRef = {
+                      current: tileRefs.current[mode] ?? null,
+                    } as React.RefObject<HTMLElement | null>;
+                    lightbox.open({
+                      images: [{ id: img.id, url: img.url }],
+                      triggerRef,
+                    });
+                  }}
+                  aria-label={`放大查看${label}`}
+                  className="block h-24 w-full cursor-zoom-in overflow-hidden rounded bg-[hsl(var(--muted))] p-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]"
+                >
+                  <LazyImage
+                    src={img.url}
+                    alt={label}
+                    className="h-full w-full object-contain"
+                  />
+                </button>
               ) : (
                 <div className="flex h-24 items-center justify-center rounded bg-[hsl(var(--muted))] text-[11px] text-[hsl(var(--muted-foreground))]">
                   无
