@@ -22,6 +22,24 @@ vi.mock('../../db/index.js', async () => {
   return { db };
 });
 
+// Magic-byte tables keyed by object-key prefix. BEN-27's verifier sniffs the
+// first 16 bytes via `getRange` and probes ContentType via `headObject`; defaults
+// here mirror what TOS would return for a well-formed upload so existing tests
+// keep flowing through `create` / `createStandalone` / `attachImage` unchanged.
+// Per-test failure paths override these with `mockResolvedValueOnce`.
+const FAMILY_BYTES: Record<'images' | 'audios' | 'videos', Buffer> = {
+  images: Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), // PNG
+  audios: Buffer.from([0x49, 0x44, 0x33, 0x04, 0x00]), // MP3 ID3
+  videos: Buffer.from([0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70]), // MP4 ftyp
+};
+const FAMILY_CONTENT_TYPE: Record<'images' | 'audios' | 'videos', string> = {
+  images: 'image/png',
+  audios: 'audio/mpeg',
+  videos: 'video/mp4',
+};
+const familyOf = (key: string): 'images' | 'audios' | 'videos' =>
+  key.startsWith('audios/') ? 'audios' : key.startsWith('videos/') ? 'videos' : 'images';
+
 vi.mock('../../services/storage/index.js', () => ({
   getPresignedUrl: vi.fn(async (key: string) => `https://cdn.example.com/${key}`),
   getPresignedPutUrl: vi.fn(async (key: string) => `https://cdn.example.com/put/${key}`),
@@ -32,6 +50,11 @@ vi.mock('../../services/storage/index.js', () => ({
   ),
   deleteObject: vi.fn(async () => undefined),
   healthCheck: vi.fn(async () => true),
+  headObject: vi.fn(async (key: string) => ({
+    contentType: FAMILY_CONTENT_TYPE[familyOf(key)],
+    contentLength: 1024,
+  })),
+  getRange: vi.fn(async (key: string) => FAMILY_BYTES[familyOf(key)]),
 }));
 
 const MOCK_SESSION = { email: 'admin@example.com' };
@@ -288,6 +311,98 @@ describe('mediaAssetsRouter', () => {
         objectKey: 'images/with-url.png',
       });
       expect(result.url).toBe('https://cdn.example.com/images/with-url.png');
+    });
+  });
+
+  describe('create — BEN-27 verify gate', () => {
+    it('rejects when HEAD ContentType family disagrees; deletes object; no DB row written', async () => {
+      const { resetTestDb } = await import('../../db/__tests__/pglite.js');
+      await resetTestDb();
+      const storage = await import('../../services/storage/index.js');
+      const { assets, media } = await import('@benchmark-admin/shared/db/schema');
+      const { getTestDb } = await import('../../db/__tests__/pglite.js');
+      const testDb = await getTestDb();
+      const headSpy = vi.mocked(storage.headObject);
+      const deleteSpy = vi.mocked(storage.deleteObject);
+      deleteSpy.mockClear();
+
+      headSpy.mockResolvedValueOnce({ contentType: 'audio/mpeg', contentLength: 1024 });
+
+      await expect(
+        caller.mediaAssets.create({
+          objectKey: 'images/wrong-header.png',
+          mediaType: 'image',
+        }),
+      ).rejects.toThrow(/content type mismatch/i);
+
+      expect(deleteSpy).toHaveBeenCalledWith('images/wrong-header.png');
+
+      // Neither the placeholder asset row nor the media row landed.
+      const assetRows = await testDb.select().from(assets);
+      expect(assetRows.every((a: { name: string }) => a.name !== 'images/wrong-header.png')).toBe(
+        true,
+      );
+      const mediaRows = await testDb.select().from(media);
+      expect(
+        mediaRows.every((m: { objectKey: string }) => m.objectKey !== 'images/wrong-header.png'),
+      ).toBe(true);
+    });
+
+    it('rejects when magic bytes are a wrong family; deletes object; no DB row written', async () => {
+      const { resetTestDb, getTestDb } = await import('../../db/__tests__/pglite.js');
+      await resetTestDb();
+      const testDb = await getTestDb();
+      const storage = await import('../../services/storage/index.js');
+      const { assets, media } = await import('@benchmark-admin/shared/db/schema');
+      const rangeSpy = vi.mocked(storage.getRange);
+      const deleteSpy = vi.mocked(storage.deleteObject);
+      deleteSpy.mockClear();
+
+      rangeSpy.mockResolvedValueOnce(Buffer.from([0x1a, 0x45, 0xdf, 0xa3, 0x01])); // WebM ebml
+
+      await expect(
+        caller.mediaAssets.create({
+          objectKey: 'images/wrong-bytes.png',
+          mediaType: 'image',
+        }),
+      ).rejects.toThrow(/content does not match/i);
+
+      expect(deleteSpy).toHaveBeenCalledWith('images/wrong-bytes.png');
+      const assetRows = await testDb.select().from(assets);
+      expect(assetRows.every((a: { name: string }) => a.name !== 'images/wrong-bytes.png')).toBe(
+        true,
+      );
+      const mediaRows = await testDb.select().from(media);
+      expect(
+        mediaRows.every((m: { objectKey: string }) => m.objectKey !== 'images/wrong-bytes.png'),
+      ).toBe(true);
+    });
+  });
+
+  describe('createStandalone — BEN-27 verify gate', () => {
+    it('rejects when HEAD ContentType is wrong family; deletes object; no media row written', async () => {
+      const { resetTestDb, getTestDb } = await import('../../db/__tests__/pglite.js');
+      await resetTestDb();
+      const testDb = await getTestDb();
+      const storage = await import('../../services/storage/index.js');
+      const { media } = await import('@benchmark-admin/shared/db/schema');
+      const headSpy = vi.mocked(storage.headObject);
+      const deleteSpy = vi.mocked(storage.deleteObject);
+      deleteSpy.mockClear();
+
+      headSpy.mockResolvedValueOnce({ contentType: 'video/mp4', contentLength: 1024 });
+
+      await expect(
+        caller.mediaAssets.createStandalone({
+          objectKey: 'images/standalone-bad-head.png',
+        }),
+      ).rejects.toThrow(/content type mismatch/i);
+
+      expect(deleteSpy).toHaveBeenCalledWith('images/standalone-bad-head.png');
+      const rows = await testDb.select().from(media);
+      expect(
+        rows.every((m: { objectKey: string }) => m.objectKey !== 'images/standalone-bad-head.png'),
+      ).toBe(true);
     });
   });
 

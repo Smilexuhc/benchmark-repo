@@ -28,6 +28,10 @@ vi.mock('../../services/storage/index.js', () => ({
   putObject: vi.fn(async () => undefined),
   newObjectKey: vi.fn(() => 'images/test.png'),
   deleteObject: vi.fn(async () => undefined),
+  // BEN-27: this suite seeds via `assets.attachImage`, which now runs
+  // verifyUploadedObject against the storage service.
+  headObject: vi.fn(async () => ({ contentType: 'image/png', contentLength: 1024 })),
+  getRange: vi.fn(async () => Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])),
 }));
 
 const MOCK_SESSION = { email: 'admin@example.com' };

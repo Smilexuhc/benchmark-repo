@@ -22,12 +22,20 @@ vi.mock('../../db/index.js', async () => {
   return { db };
 });
 
+// BEN-27: every default `attachImage` call here targets `images/...` keys;
+// the verifier sniffs HEAD + first 16 bytes against `detectMimeFromBytes`.
+// Mock both probes to return PNG-shaped data so existing tests stay green;
+// failure paths are covered explicitly in the BEN-27 sub-describe below.
+const DEFAULT_IMAGE_BYTES = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
 vi.mock('../../services/storage/index.js', () => ({
   getPresignedUrl: vi.fn(async (key: string) => `https://cdn.example.com/${key}`),
   getBytes: vi.fn(async () => Buffer.from('fake-bytes')),
   putObject: vi.fn(async () => undefined),
   newObjectKey: vi.fn(() => 'images/test-key.png'),
   deleteObject: vi.fn(async () => undefined),
+  headObject: vi.fn(async () => ({ contentType: 'image/png', contentLength: 1024 })),
+  getRange: vi.fn(async () => DEFAULT_IMAGE_BYTES),
 }));
 
 const MOCK_SESSION = { email: 'admin@example.com' };
@@ -390,6 +398,55 @@ describe('assetsRouter', () => {
 
       const fetched = await caller.assets.get({ id: asset.id });
       expect(fetched.images).toHaveLength(5);
+    });
+
+    it('attachImage rejects when HEAD ContentType is not image/*; deletes object; no DB row written (BEN-27)', async () => {
+      const { resetTestDb } = await import('../../db/__tests__/pglite.js');
+      await resetTestDb();
+      const storage = await import('../../services/storage/index.js');
+      const headSpy = vi.mocked(storage.headObject);
+      const deleteSpy = vi.mocked(storage.deleteObject);
+      deleteSpy.mockClear();
+
+      const asset = await caller.assets.create({ kind: 'character', name: 'VerifyHeadFail', data: {} });
+      headSpy.mockResolvedValueOnce({ contentType: 'audio/mpeg', contentLength: 1024 });
+
+      await expect(
+        caller.assets.attachImage({
+          id: asset.id,
+          objectKey: 'images/spoof-head.png',
+          source: 'uploaded',
+        }),
+      ).rejects.toThrow(/content type mismatch/i);
+
+      expect(deleteSpy).toHaveBeenCalledWith('images/spoof-head.png');
+      const fetched = await caller.assets.get({ id: asset.id });
+      expect(fetched.images).toHaveLength(0);
+    });
+
+    it('attachImage rejects when magic bytes are wrong family; deletes object; no DB row written (BEN-27)', async () => {
+      const { resetTestDb } = await import('../../db/__tests__/pglite.js');
+      await resetTestDb();
+      const storage = await import('../../services/storage/index.js');
+      const rangeSpy = vi.mocked(storage.getRange);
+      const deleteSpy = vi.mocked(storage.deleteObject);
+      deleteSpy.mockClear();
+
+      const asset = await caller.assets.create({ kind: 'character', name: 'VerifyBytesFail', data: {} });
+      // mp3 ID3 magic — definitely-not-image
+      rangeSpy.mockResolvedValueOnce(Buffer.from([0x49, 0x44, 0x33, 0x04, 0x00]));
+
+      await expect(
+        caller.assets.attachImage({
+          id: asset.id,
+          objectKey: 'images/spoof-bytes.png',
+          source: 'uploaded',
+        }),
+      ).rejects.toThrow(/content does not match/i);
+
+      expect(deleteSpy).toHaveBeenCalledWith('images/spoof-bytes.png');
+      const fetched = await caller.assets.get({ id: asset.id });
+      expect(fetched.images).toHaveLength(0);
     });
 
     it('list still returns all images when no cover is set; coverImageId is null', async () => {

@@ -7,6 +7,7 @@ import { db } from '../db/index.js';
 import { mediaVisible } from '../db/soft-delete.js';
 import * as storage from '../services/storage/index.js';
 import { EXT_TO_CONTENT_TYPE } from '../services/upload/validate.js';
+import { verifyUploadedObject } from '../services/upload/verifyObject.js';
 import { t } from '../trpc/init.js';
 import { protectedProcedure } from '../trpc/procedures.js';
 
@@ -205,25 +206,35 @@ export const mediaAssetsRouter = t.router({
       }),
     )
     .mutation(async ({ input }) => {
-      const [asset] = await db
-        .insert(assets)
-        .values({ kind: input.assetKind, name: input.filename || input.objectKey })
-        .returning();
-      if (!asset) throw new Error('Failed to create asset');
+      // BEN-27: verify the just-uploaded object before persisting any DB row.
+      // Any throw — verify failure or downstream DB failure — must delete the
+      // TOS object so a failed create cannot leave an orphan blob behind.
+      try {
+        await verifyUploadedObject(input.objectKey, input.mediaType);
 
-      const [img] = await db
-        .insert(media)
-        .values({
-          assetId: asset.id,
-          objectKey: input.objectKey,
-          source: 'uploaded',
-          mediaType: input.mediaType,
-        })
-        .returning();
-      if (!img) throw new Error('Failed to create asset image');
+        const [asset] = await db
+          .insert(assets)
+          .values({ kind: input.assetKind, name: input.filename || input.objectKey })
+          .returning();
+        if (!asset) throw new Error('Failed to create asset');
 
-      const url = await storage.getPresignedUrl(img.objectKey).catch(() => '');
-      return { ...img, url, assetKind: asset.kind };
+        const [img] = await db
+          .insert(media)
+          .values({
+            assetId: asset.id,
+            objectKey: input.objectKey,
+            source: 'uploaded',
+            mediaType: input.mediaType,
+          })
+          .returning();
+        if (!img) throw new Error('Failed to create asset image');
+
+        const url = await storage.getPresignedUrl(img.objectKey).catch(() => '');
+        return { ...img, url, assetKind: asset.kind };
+      } catch (err) {
+        await storage.deleteObject(input.objectKey).catch(() => undefined);
+        throw err;
+      }
     }),
 
   // Standalone media: persists a previously-uploaded object as an
@@ -243,21 +254,32 @@ export const mediaAssetsRouter = t.router({
       }),
     )
     .mutation(async ({ input }) => {
-      const [img] = await db
-        .insert(media)
-        .values({
-          assetId: null,
-          objectKey: input.objectKey,
-          source: 'uploaded',
-          mediaType: input.mediaType,
-          title: input.filename,
-        })
-        .returning();
-      if (!img) throw new Error('Failed to create standalone media');
+      // BEN-27: same verify-before-persist gate as `create`. Standalone media
+      // still results in a row pointing at TOS bytes — the security argument
+      // (don't trust the client's PUT body) does not weaken because the asset
+      // row is absent.
+      try {
+        await verifyUploadedObject(input.objectKey, input.mediaType);
 
-      const url = await storage.getPresignedUrl(img.objectKey).catch(() => '');
-      // Match the sibling `create` return shape so the frontend doesn't have
-      // to discriminate. assetKind is always null for standalone rows.
-      return { ...img, url, assetKind: null };
+        const [img] = await db
+          .insert(media)
+          .values({
+            assetId: null,
+            objectKey: input.objectKey,
+            source: 'uploaded',
+            mediaType: input.mediaType,
+            title: input.filename,
+          })
+          .returning();
+        if (!img) throw new Error('Failed to create standalone media');
+
+        const url = await storage.getPresignedUrl(img.objectKey).catch(() => '');
+        // Match the sibling `create` return shape so the frontend doesn't have
+        // to discriminate. assetKind is always null for standalone rows.
+        return { ...img, url, assetKind: null };
+      } catch (err) {
+        await storage.deleteObject(input.objectKey).catch(() => undefined);
+        throw err;
+      }
     }),
 });
