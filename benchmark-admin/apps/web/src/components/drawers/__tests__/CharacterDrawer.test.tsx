@@ -1,4 +1,5 @@
 import { Toaster } from '@/components/feedback/toast';
+import { LightboxProvider } from '@/components/ui/lightbox';
 import { createTrpcMock } from '@/test/trpc-mock';
 /**
  * U6 — Character Drawer alignment.
@@ -90,10 +91,19 @@ vi.mock('@/lib/trpc', () =>
 
 import { CharacterDrawer } from '../CharacterDrawer';
 
+// ImageGrid (rendered inside the drawer) calls useLightbox, which throws when
+// no LightboxProvider is mounted. Wrap every render so tests match the prod
+// tree where LightboxProvider lives at the route root.
+function renderWithLightbox(ui: React.ReactElement) {
+  return render(<LightboxProvider>{ui}</LightboxProvider>);
+}
+
 describe('CharacterDrawer', () => {
   it('keeps a dirty (AI-patched) field across a server-data refresh', async () => {
     liveAsset = structuredClone(initialAsset);
-    const { rerender } = render(<CharacterDrawer id={7} onClose={vi.fn()} onCreated={vi.fn()} />);
+    const { rerender } = renderWithLightbox(
+      <CharacterDrawer id={7} onClose={vi.fn()} onCreated={vi.fn()} />,
+    );
 
     const user = userEvent.setup();
 
@@ -107,7 +117,11 @@ describe('CharacterDrawer', () => {
       data: { ...liveAsset.data, prompt: 'stale server prompt' },
     };
     await act(async () => {
-      rerender(<CharacterDrawer id={7} onClose={vi.fn()} onCreated={vi.fn()} />);
+      rerender(
+        <LightboxProvider>
+          <CharacterDrawer id={7} onClose={vi.fn()} onCreated={vi.fn()} />
+        </LightboxProvider>,
+      );
     });
 
     expect(screen.getByDisplayValue('USER EDIT')).toBeInTheDocument();
@@ -117,7 +131,7 @@ describe('CharacterDrawer', () => {
     liveAsset = structuredClone(initialAsset);
     liveAsset.data.persona = '';
     liveAsset.name = '';
-    render(<CharacterDrawer id={7} onClose={vi.fn()} onCreated={vi.fn()} />);
+    renderWithLightbox(<CharacterDrawer id={7} onClose={vi.fn()} onCreated={vi.fn()} />);
 
     const user = userEvent.setup();
     // Submitting should fail and surface the persona `必填` error
@@ -131,7 +145,7 @@ describe('CharacterDrawer', () => {
   it('AI 填入字段 runs extractFields against the description and merges', async () => {
     liveAsset = structuredClone(initialAsset);
     liveAsset.data.description = '一名古代男侠客';
-    render(
+    renderWithLightbox(
       <>
         <CharacterDrawer id={7} onClose={vi.fn()} onCreated={vi.fn()} />
         <Toaster />
@@ -148,7 +162,7 @@ describe('CharacterDrawer', () => {
 
   it('AutoComplete accepts free-text values not in the options list', async () => {
     liveAsset = structuredClone(initialAsset);
-    render(<CharacterDrawer id={7} onClose={vi.fn()} onCreated={vi.fn()} />);
+    renderWithLightbox(<CharacterDrawer id={7} onClose={vi.fn()} onCreated={vi.fn()} />);
 
     const user = userEvent.setup();
     const eraInput = screen.getByLabelText('时代');
