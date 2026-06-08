@@ -181,7 +181,7 @@ export function PlaygroundPage() {
         </FieldRow>
 
         <Textarea
-          rows={4}
+          rows={8}
           placeholder="输入指令以生成新图像（中英文均可）"
           aria-label="提示词"
           {...form.register('prompt')}
