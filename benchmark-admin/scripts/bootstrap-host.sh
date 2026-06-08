@@ -42,9 +42,8 @@ Host is provisioned. Remaining steps:
      SESSION_SECRET must be 64 hex chars:  openssl rand -hex 32
   2) Point DNS: A record benchmark-admin.jy-video.cn -> this host's public IP
      (open security-group ports 80 and 443).
-  3) Deploy the app stack — either push to main (GitHub Actions does it), or
-     manually once the images are in CR:
-       cd $APP_DIR
-       export CR_NAMESPACE=<your-cr-namespace> IMAGE_TAG=latest
-       docker compose pull && docker compose up -d --remove-orphans
+  3) Deploy the app stack from your local checkout:
+       DEPLOY_HOST=root@<this-host> CR_NAMESPACE=<your-cr-namespace> \\
+         ./scripts/deploy-remote.sh
+     (See ./scripts/deploy-remote.sh --help for ENV_FILE / SKIP_BUILD flags.)
 NOTE
