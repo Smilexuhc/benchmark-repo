@@ -31,6 +31,12 @@ export type CascaderProps = {
   separator?: string;
   className?: string;
   disabled?: boolean;
+  // Optional controlled open state. Pass both `open` and `onOpenChange` to let
+  // the parent drive open/close — needed so callers can force-close after a
+  // commit when a browser-specific quirk (seen on Edge) keeps the internal
+  // setOpen(false) from taking effect.
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 };
 
 function pathLabels(options: CascaderOption[], path: string[]): string[] {
@@ -54,8 +60,20 @@ export function Cascader({
   separator = ' / ',
   className,
   disabled,
+  open: openProp,
+  onOpenChange,
 }: CascaderProps) {
-  const [open, setOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
+  const isControlled = openProp !== undefined;
+  const open = isControlled ? openProp : internalOpen;
+  const setOpen = useCallback(
+    (next: boolean | ((prev: boolean) => boolean)) => {
+      const resolved = typeof next === 'function' ? next(open) : next;
+      if (!isControlled) setInternalOpen(resolved);
+      onOpenChange?.(resolved);
+    },
+    [isControlled, onOpenChange, open],
+  );
   // `active` is the row currently highlighted in each column. It starts as a
   // copy of `value` so the popover opens already focused on the current path.
   const [active, setActive] = useState<string[]>(value);
