@@ -144,6 +144,10 @@ export function BenchmarkDrawer({ id, onClose, onSaved }: BenchmarkDrawerProps) 
   const update = trpc.benchmark.update.useMutation();
   const deleteMutation = trpc.benchmark.delete.useMutation();
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // Drive the 新分类 Cascader's open state from here so we can force-close it
+  // after a leaf commit. The Cascader's own setOpen(false) closes cleanly in
+  // Chrome but not in some Edge configurations, so we belt-and-suspenders it.
+  const [cascaderOpen, setCascaderOpen] = useState(false);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(FormSchema),
@@ -222,6 +226,7 @@ export function BenchmarkDrawer({ id, onClose, onSaved }: BenchmarkDrawerProps) 
     form.setValue('categoryL2', l2, { shouldDirty: true });
     form.setValue('categoryL3', l3, { shouldDirty: true });
     form.setValue('categoryDefinition', definitionFor(l1, l2, l3), { shouldDirty: true });
+    setCascaderOpen(false);
   }
 
   // Non-blocking completeness feedback: the product wants curated items, but an
@@ -292,6 +297,8 @@ export function BenchmarkDrawer({ id, onClose, onSaved }: BenchmarkDrawerProps) 
             options={cascaderOptions}
             value={cascaderValue}
             onChange={(path) => selectCategoryPath(path)}
+            open={cascaderOpen}
+            onOpenChange={setCascaderOpen}
           />
         </Field>
         {categoryDefinition ? (
