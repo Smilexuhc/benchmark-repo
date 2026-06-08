@@ -12,9 +12,12 @@ import { type RouterOutputs, trpc } from '@/lib/trpc';
 
 type MediaItem = RouterOutputs['mediaAssets']['list']['items'][number];
 
-const PICKER_COLS = 3;
-const PICKER_ROW_PX = 160;
-const PICKER_SCROLL_HEIGHT = 'calc(100vh - 260px)';
+// Legacy parity (frontend/src/components/BenchmarkItemDrawer.tsx:318-456):
+// 920px modal, single-column table with [checkbox][preview thumb][title + meta].
+// Each row is a single virtualized row so the height accommodates the 64px
+// landscape thumbnail.
+const PICKER_ROW_PX = 84;
+const PICKER_SCROLL_HEIGHT = 'calc(100vh - 280px)';
 const PICKER_NEAR_BOTTOM_PX = 320;
 
 const MEDIA_TYPE_ACCEPT: Record<string, string> = {
@@ -320,8 +323,8 @@ export function MediaPicker({
         <Drawer
           open
           onClose={() => setOpen(false)}
-          title={label}
-          widthClassName="w-[640px] max-w-full"
+          title={`选择${label}`}
+          widthClassName="w-[920px] max-w-full"
         >
           {filterFields.length > 0 ? (
             <div className="mb-2 flex flex-wrap items-center gap-2">
@@ -329,7 +332,7 @@ export function MediaPicker({
                 <Select
                   key={field.key}
                   aria-label={field.label}
-                  className="h-8 w-[120px] text-xs"
+                  className="h-8 w-[140px] text-xs"
                   value={filterValues[field.key] ?? ''}
                   onChange={(e) =>
                     setFilterValues((prev) => ({
@@ -360,7 +363,7 @@ export function MediaPicker({
           ) : null}
           <Input
             aria-label="搜索素材"
-            placeholder="搜索标题 / 文件名 / 来源…"
+            placeholder={`搜索${label}`}
             className="mb-3"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -372,8 +375,9 @@ export function MediaPicker({
               没有可用的 {mediaType} 媒体。
             </p>
           ) : (
-            <VirtualizedMediaGrid
+            <VirtualizedMediaTable
               items={items}
+              mediaType={mediaType}
               selectedIds={selectedIds}
               onToggle={toggle}
               hasNextPage={list.hasNextPage ?? false}
@@ -383,6 +387,9 @@ export function MediaPicker({
           )}
           <footer className="mt-4 flex justify-end gap-2">
             <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+              关闭
+            </Button>
+            <Button type="button" onClick={() => setOpen(false)}>
               完成
             </Button>
           </footer>
@@ -392,8 +399,9 @@ export function MediaPicker({
   );
 }
 
-type VirtualizedMediaGridProps = {
+type VirtualizedMediaTableProps = {
   items: MediaItem[];
+  mediaType: MediaKind;
   selectedIds: number[];
   onToggle: (id: number) => void;
   hasNextPage: boolean;
@@ -401,22 +409,37 @@ type VirtualizedMediaGridProps = {
   fetchNextPage: () => unknown;
 };
 
-function VirtualizedMediaGrid({
+function filenameOf(item: MediaItem): string {
+  return item.title?.trim() || (item.objectKey?.split('/').pop() ?? `media-${item.id}`);
+}
+
+// Legacy parity (BenchmarkItemDrawer.tsx:325-334 `mediaMeta`): one line below the
+// title combining source · #id · filename — drop the title-derived filename if it
+// already equals the title to avoid duplication.
+function metaOf(item: MediaItem): string {
+  const filename = item.objectKey?.split('/').pop() ?? '';
+  const label = filenameOf(item);
+  const parts = [item.source, `#${item.id}`];
+  if (filename && filename !== label) parts.push(filename);
+  return parts.filter(Boolean).join(' · ');
+}
+
+function VirtualizedMediaTable({
   items,
+  mediaType,
   selectedIds,
   onToggle,
   hasNextPage,
   isFetchingNextPage,
   fetchNextPage,
-}: VirtualizedMediaGridProps) {
+}: VirtualizedMediaTableProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const rowCount = Math.ceil(items.length / PICKER_COLS);
 
   const rowVirtualizer = useVirtualizer<HTMLDivElement, HTMLDivElement>({
-    count: rowCount,
+    count: items.length,
     getScrollElement: () => scrollRef.current,
     estimateSize: () => PICKER_ROW_PX,
-    overscan: 3,
+    overscan: 6,
   });
 
   useEffect(() => {
@@ -433,58 +456,82 @@ function VirtualizedMediaGrid({
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   return (
-    <div ref={scrollRef} className="overflow-auto" style={{ height: PICKER_SCROLL_HEIGHT }}>
-      <div className="relative w-full" style={{ height: `${rowVirtualizer.getTotalSize()}px` }}>
-        {rowVirtualizer.getVirtualItems().map((virtualRow: VRow) => {
-          const start = virtualRow.index * PICKER_COLS;
-          const rowItems = items.slice(start, start + PICKER_COLS);
-          return (
-            <div
-              key={virtualRow.key}
-              className="absolute left-0 right-0 grid grid-cols-3 gap-2"
-              style={{ transform: `translateY(${virtualRow.start}px)` }}
-            >
-              {rowItems.map((it) => {
-                const active = selectedIds.includes(it.id);
-                return (
-                  <button
-                    key={it.id}
-                    type="button"
-                    aria-pressed={active}
-                    onClick={() => onToggle(it.id)}
-                    className={`overflow-hidden rounded border text-left ${active ? 'border-[hsl(var(--primary))] ring-2 ring-[hsl(var(--ring))]' : 'border-[hsl(var(--border))]'}`}
-                  >
-                    <LazyImage
-                      src={it.url}
-                      alt={`media-${it.id}`}
-                      className="aspect-square w-full"
-                    />
-                    <div className="px-1.5 py-1 text-xs">
-                      <div className="truncate">#{it.id}</div>
-                      <div className="truncate text-[hsl(var(--muted-foreground))]">
-                        {it.source}
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          );
-        })}
+    <div className="overflow-hidden rounded border border-[hsl(var(--border))]">
+      {/* Header row — matches legacy AntD Table columns 预览 / 素材. */}
+      <div className="flex items-center gap-3 border-b border-[hsl(var(--border))] bg-[hsl(var(--muted))] px-3 py-2 text-xs font-medium text-[hsl(var(--muted-foreground))]">
+        <span className="w-4" aria-hidden="true" />
+        <span className="w-[88px]">预览</span>
+        <span className="flex-1">素材</span>
       </div>
-      {hasNextPage ? (
-        <div className="mt-3 flex justify-center pb-2">
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={() => fetchNextPage()}
-            disabled={isFetchingNextPage}
-          >
-            {isFetchingNextPage ? '加载中…' : '加载更多'}
-          </Button>
+      <div ref={scrollRef} className="overflow-auto" style={{ height: PICKER_SCROLL_HEIGHT }}>
+        <div
+          className="relative w-full"
+          style={{ height: `${rowVirtualizer.getTotalSize()}px` }}
+        >
+          {rowVirtualizer.getVirtualItems().map((virtualRow: VRow) => {
+            const item = items[virtualRow.index];
+            if (!item) return null;
+            const active = selectedIds.includes(item.id);
+            const isImage = mediaType === 'image';
+            const label = filenameOf(item);
+            return (
+              <button
+                key={virtualRow.key}
+                type="button"
+                aria-pressed={active}
+                onClick={() => onToggle(item.id)}
+                className={`absolute left-0 right-0 flex w-full items-center gap-3 border-b border-[hsl(var(--border))] px-3 text-left transition-colors hover:bg-[hsl(var(--muted))] focus:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))] ${active ? 'bg-[hsl(var(--accent))]' : ''}`}
+                style={{ transform: `translateY(${virtualRow.start}px)`, height: PICKER_ROW_PX }}
+              >
+                <span
+                  aria-hidden="true"
+                  className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[10px] ${
+                    active
+                      ? 'border-[hsl(var(--primary))] bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))]'
+                      : 'border-[hsl(var(--border))] bg-[hsl(var(--background))]'
+                  }`}
+                >
+                  {active ? '✓' : ''}
+                </span>
+                <span className="block h-[58px] w-[88px] shrink-0 overflow-hidden rounded bg-[hsl(var(--muted))]">
+                  {isImage ? (
+                    <LazyImage
+                      src={item.url}
+                      alt={label}
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <span className="flex h-full w-full items-center justify-center text-[11px] text-[hsl(var(--muted-foreground))]">
+                      {mediaType === 'audio' ? 'AUDIO' : 'VIDEO'}
+                    </span>
+                  )}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-semibold text-[hsl(var(--foreground))]">
+                    {label}
+                  </span>
+                  <span className="block truncate text-xs text-[hsl(var(--muted-foreground))]">
+                    {metaOf(item)}
+                  </span>
+                </span>
+              </button>
+            );
+          })}
         </div>
-      ) : null}
+        {hasNextPage ? (
+          <div className="flex justify-center py-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => fetchNextPage()}
+              disabled={isFetchingNextPage}
+            >
+              {isFetchingNextPage ? '加载中…' : '加载更多'}
+            </Button>
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }
