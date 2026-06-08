@@ -129,7 +129,12 @@ export function SceneDrawer({
     try {
       const v = form.getValues();
       const data = buildPayload(v).data;
-      const { prompt } = await ctx.generatePrompt.mutateAsync({ kind: 'scene', data });
+      const description = (v.description ?? '').trim() || undefined;
+      const { prompt } = await ctx.generatePrompt.mutateAsync({
+        kind: 'scene',
+        data,
+        description,
+      });
       form.setValue('prompt', prompt, { shouldDirty: true });
     } catch (e) {
       ctx.setAiError(e instanceof Error ? e.message : '生成失败');
@@ -403,11 +408,22 @@ export function SceneDrawer({
                 await ctx.deleteImage.mutateAsync({ imageId });
                 await ctx.refresh();
               }}
+              setCoverBusyId={
+                ctx.setCover.isPending ? (ctx.setCover.variables?.imageId ?? null) : null
+              }
+              deleteBusyId={
+                ctx.deleteImage.isPending ? (ctx.deleteImage.variables?.imageId ?? null) : null
+              }
             />
           )}
         </section>
         {!ctx.isNew ? (
-          <SceneViewColumn sceneId={id} images={images} onAfter={() => ctx.refresh()} />
+          <SceneViewColumn
+            sceneId={id}
+            images={images}
+            hasCover={ctx.asset?.coverImageId != null}
+            onAfter={() => ctx.refresh()}
+          />
         ) : null}
 
         <DrawerFooter

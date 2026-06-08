@@ -34,6 +34,68 @@ async function addUrls(rows: MediaRow[]) {
 
 const LIMIT = 50;
 
+// Legacy parity (frontend/src/components/BenchmarkItemDrawer.tsx
+// FILTER_FIELDS_BY_KIND): character pickers filter by era/type/gender/age/genre;
+// scene pickers by era/scene_type/genre/mood. era and genre are top-level
+// asset columns; the rest live in the assets.data JSONB.
+const PickerFiltersInput = z
+  .object({
+    era: z.array(z.string()).optional(),
+    genre: z.array(z.string()).optional(),
+    type: z.array(z.string()).optional(),
+    gender: z.array(z.string()).optional(),
+    age: z.array(z.string()).optional(),
+    scene_type: z.array(z.string()).optional(),
+    mood: z.array(z.string()).optional(),
+  })
+  .optional();
+
+type PickerFilters = z.infer<typeof PickerFiltersInput>;
+
+// Build drizzle conditions for the non-dedup query path (joins via the typed
+// `assets` table).
+function buildFilterConditions(filters: PickerFilters): SQL[] {
+  const out: SQL[] = [];
+  if (!filters) return out;
+  if (filters.era?.length) out.push(inArray(assets.era, filters.era));
+  if (filters.genre?.length) out.push(inArray(assets.genre, filters.genre));
+  if (filters.type?.length)
+    out.push(inArray(sql<string>`(${assets.data}->>'type')`, filters.type));
+  if (filters.gender?.length)
+    out.push(inArray(sql<string>`(${assets.data}->>'gender')`, filters.gender));
+  if (filters.age?.length)
+    out.push(inArray(sql<string>`(${assets.data}->>'age')`, filters.age));
+  if (filters.scene_type?.length)
+    out.push(inArray(sql<string>`(${assets.data}->>'scene_type')`, filters.scene_type));
+  if (filters.mood?.length)
+    out.push(inArray(sql<string>`(${assets.data}->>'mood')`, filters.mood));
+  return out;
+}
+
+// Build a raw SQL fragment for the dedup query path, where the asset table is
+// aliased `a` so the drizzle column refs in `buildFilterConditions` would
+// generate the wrong qualifier.
+function buildFilterClauseRaw(filters: PickerFilters): SQL {
+  if (!filters) return sql``;
+  const parts: SQL[] = [];
+  function inList(values: string[]): SQL {
+    return sql`(${sql.join(
+      values.map((v) => sql`${v}`),
+      sql`, `,
+    )})`;
+  }
+  if (filters.era?.length) parts.push(sql` AND a.era IN ${inList(filters.era)}`);
+  if (filters.genre?.length) parts.push(sql` AND a.genre IN ${inList(filters.genre)}`);
+  if (filters.type?.length) parts.push(sql` AND (a.data->>'type') IN ${inList(filters.type)}`);
+  if (filters.gender?.length)
+    parts.push(sql` AND (a.data->>'gender') IN ${inList(filters.gender)}`);
+  if (filters.age?.length) parts.push(sql` AND (a.data->>'age') IN ${inList(filters.age)}`);
+  if (filters.scene_type?.length)
+    parts.push(sql` AND (a.data->>'scene_type') IN ${inList(filters.scene_type)}`);
+  if (filters.mood?.length) parts.push(sql` AND (a.data->>'mood') IN ${inList(filters.mood)}`);
+  return parts.length === 0 ? sql`` : sql.join(parts, sql``);
+}
+
 export const mediaAssetsRouter = t.router({
   list: protectedProcedure
     .input(
@@ -41,6 +103,11 @@ export const mediaAssetsRouter = t.router({
         kind: z.enum(['character', 'scene', 'prop']).optional(),
         mediaType: z.enum(['image', 'audio', 'video']).optional(),
         search: z.string().optional(),
+        // Legacy parity: BenchmarkItemDrawer's MediaPicker filters by asset tags
+        // (era/type/gender/age/genre for character; era/scene_type/genre/mood
+        // for scene). Applying any filter narrows to media with a parent asset,
+        // so standalone (asset_id NULL) rows drop out by design.
+        filters: PickerFiltersInput,
         dedup: z.boolean().default(false),
         cursor: z.number().int().positive().optional(),
       }),
@@ -54,6 +121,8 @@ export const mediaAssetsRouter = t.router({
       const joinConditions: SQL[] = [mediaVisible()];
       if (input.kind) joinConditions.push(eq(assets.kind, input.kind));
       if (input.mediaType) joinConditions.push(eq(media.mediaType, input.mediaType));
+      const filterConditions = buildFilterConditions(input.filters);
+      joinConditions.push(...filterConditions);
       const searchTerm = input.search?.trim();
       if (searchTerm) {
         const like = `%${searchTerm}%`;
@@ -80,6 +149,11 @@ export const mediaAssetsRouter = t.router({
         const searchClause = searchTerm
           ? sql` AND (ai.title ILIKE ${`%${searchTerm}%`} OR ai.object_key ILIKE ${`%${searchTerm}%`} OR ai.source ILIKE ${`%${searchTerm}%`})`
           : sql``;
+        const filterClause = buildFilterClauseRaw(input.filters);
+        // Tag filters reference asset columns (`a.era`, `a.data->>...`); a
+        // standalone row's LEFT JOIN yields NULLs that never match, so once any
+        // filter is on, standalone media drop out — matching the non-dedup
+        // path's behaviour.
         const cursorClause = input.cursor ? sql` WHERE dedup.id < ${input.cursor}` : sql``;
 
         const query = sql`
@@ -98,7 +172,7 @@ export const mediaAssetsRouter = t.router({
             WHERE ai.deleted_at IS NULL
               -- inlined mediaVisible(): hide media whose parent asset is soft-deleted
               -- (standalone media has asset_id NULL → the LEFT JOIN yields a.* NULL → kept)
-              AND (ai.asset_id IS NULL OR a.deleted_at IS NULL)${kindClause}${mtClause}
+              AND (ai.asset_id IS NULL OR a.deleted_at IS NULL)${kindClause}${mtClause}${filterClause}
             ORDER BY ai.object_key, ai.id
           ) dedup
           ${cursorClause}

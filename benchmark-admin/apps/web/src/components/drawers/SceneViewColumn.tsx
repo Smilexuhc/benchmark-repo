@@ -15,10 +15,15 @@ const VIEWS: { mode: Mode; label: string }[] = [
 export type SceneViewColumnProps = {
   sceneId: number;
   images: { id: number; url: string; source?: string }[];
+  // Whether the scene has a base cover image. Without one, reverse/multiview
+  // generation has no source to work from — legacy SceneViewColumn:99,111,123
+  // disables the buttons and surfaces a hint. We mirror that here so users
+  // don't click into a backend error.
+  hasCover: boolean;
   onAfter: () => void;
 };
 
-export function SceneViewColumn({ sceneId, images, onAfter }: SceneViewColumnProps) {
+export function SceneViewColumn({ sceneId, images, hasCover, onAfter }: SceneViewColumnProps) {
   const generate = trpc.scenes.generateView.useMutation();
   const [busyMode, setBusyMode] = useState<Mode | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -81,7 +86,7 @@ export function SceneViewColumn({ sceneId, images, onAfter }: SceneViewColumnPro
                 type="button"
                 size="sm"
                 variant="outline"
-                disabled={loading || generate.isPending}
+                disabled={!hasCover || loading || generate.isPending}
                 onClick={() => run(mode)}
                 className="h-7 text-xs"
               >
@@ -91,6 +96,12 @@ export function SceneViewColumn({ sceneId, images, onAfter }: SceneViewColumnPro
           );
         })}
       </div>
+
+      {!hasCover ? (
+        <p className="text-[11px] text-[hsl(var(--muted-foreground))]">
+          需先有场景图，才能生成多视角
+        </p>
+      ) : null}
     </section>
   );
 }

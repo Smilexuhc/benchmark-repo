@@ -324,6 +324,158 @@ describe('mediaAssetsRouter', () => {
     });
   });
 
+  describe('asset tag filters (legacy MediaPicker parity)', () => {
+    async function seedCharacterImages() {
+      const ancient = await caller.assets.create({
+        kind: 'character',
+        name: 'AncientHero',
+        era: '古代',
+        genre: '历史',
+        data: { type: '人类', gender: '男', age: '青年' },
+      });
+      await caller.assets.attachImage({
+        id: ancient.id,
+        objectKey: 'images/ancient.png',
+        source: 'uploaded',
+      });
+      const modern = await caller.assets.create({
+        kind: 'character',
+        name: 'ModernAnimal',
+        era: '现代',
+        genre: '动画',
+        data: { type: '动物', gender: '其他', age: '少年' },
+      });
+      await caller.assets.attachImage({
+        id: modern.id,
+        objectKey: 'images/modern.png',
+        source: 'uploaded',
+      });
+      return { ancient, modern };
+    }
+
+    it('filters character media by era column', async () => {
+      await seedCharacterImages();
+      const { items } = await caller.mediaAssets.list({
+        kind: 'character',
+        dedup: false,
+        filters: { era: ['古代'] },
+      });
+      const keys = items.map((r: { objectKey: string }) => r.objectKey);
+      expect(keys).toContain('images/ancient.png');
+      expect(keys).not.toContain('images/modern.png');
+    });
+
+    it('filters character media by JSONB type field', async () => {
+      await seedCharacterImages();
+      const { items } = await caller.mediaAssets.list({
+        kind: 'character',
+        dedup: false,
+        filters: { type: ['动物'] },
+      });
+      const keys = items.map((r: { objectKey: string }) => r.objectKey);
+      expect(keys).toContain('images/modern.png');
+      expect(keys).not.toContain('images/ancient.png');
+    });
+
+    it('combines multiple filters with AND', async () => {
+      await seedCharacterImages();
+      const { items } = await caller.mediaAssets.list({
+        kind: 'character',
+        dedup: false,
+        filters: { era: ['古代'], gender: ['女'] },
+      });
+      expect(items).toHaveLength(0);
+    });
+
+    it('filters scene media by JSONB scene_type field', async () => {
+      const indoor = await caller.assets.create({
+        kind: 'scene',
+        name: 'IndoorScene',
+        era: '现代',
+        data: { scene_type: '室内', mood: '白天' },
+      });
+      await caller.assets.attachImage({
+        id: indoor.id,
+        objectKey: 'images/indoor-scene.png',
+        source: 'uploaded',
+      });
+      const outdoor = await caller.assets.create({
+        kind: 'scene',
+        name: 'OutdoorScene',
+        era: '现代',
+        data: { scene_type: '室外', mood: '夜晚' },
+      });
+      await caller.assets.attachImage({
+        id: outdoor.id,
+        objectKey: 'images/outdoor-scene.png',
+        source: 'uploaded',
+      });
+
+      const { items } = await caller.mediaAssets.list({
+        kind: 'scene',
+        dedup: false,
+        filters: { scene_type: ['室外'] },
+      });
+      const keys = items.map((r: { objectKey: string }) => r.objectKey);
+      expect(keys).toContain('images/outdoor-scene.png');
+      expect(keys).not.toContain('images/indoor-scene.png');
+    });
+
+    it('applies filters in the dedup branch', async () => {
+      const ancient = await caller.assets.create({
+        kind: 'character',
+        name: 'AncientForDedup',
+        era: '古代',
+        data: {},
+      });
+      // Two images sharing one object_key — dedup should collapse to one row.
+      await caller.assets.attachImage({
+        id: ancient.id,
+        objectKey: 'images/ancient-dedup.png',
+        source: 'uploaded',
+      });
+      await caller.assets.attachImage({
+        id: ancient.id,
+        objectKey: 'images/ancient-dedup.png',
+        source: 'uploaded',
+      });
+      const modern = await caller.assets.create({
+        kind: 'character',
+        name: 'ModernForDedup',
+        era: '现代',
+        data: {},
+      });
+      await caller.assets.attachImage({
+        id: modern.id,
+        objectKey: 'images/modern-dedup.png',
+        source: 'uploaded',
+      });
+
+      const { items } = await caller.mediaAssets.list({
+        kind: 'character',
+        dedup: true,
+        filters: { era: ['古代'] },
+      });
+      const keys = items.map((r: { objectKey: string }) => r.objectKey);
+      expect(keys).toContain('images/ancient-dedup.png');
+      expect(keys).not.toContain('images/modern-dedup.png');
+      // dedup collapses the two attachments under one object key into one row.
+      expect(keys.filter((k: string) => k === 'images/ancient-dedup.png')).toHaveLength(1);
+    });
+
+    it('returns everything when filters is omitted or empty', async () => {
+      await seedCharacterImages();
+      const withOmitted = await caller.mediaAssets.list({ kind: 'character', dedup: false });
+      const withEmpty = await caller.mediaAssets.list({
+        kind: 'character',
+        dedup: false,
+        filters: {},
+      });
+      expect(withOmitted.items.length).toBe(withEmpty.items.length);
+      expect(withOmitted.items.length).toBeGreaterThanOrEqual(2);
+    });
+  });
+
   it('paginates with cursor', async () => {
     const asset = await caller.assets.create({ kind: 'prop', name: 'Pagination Asset', data: {} });
     // Create 55 images to exceed the LIMIT of 50

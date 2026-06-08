@@ -1,11 +1,12 @@
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useDebounce } from 'use-debounce';
 import { LazyImage } from '@/components/asset-library/LazyImage';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Drawer } from '@/components/ui/drawer';
 import { Input } from '@/components/ui/input';
+import { Select } from '@/components/ui/select';
 import { useLightbox } from '@/lib/lightbox-context';
 import { type RouterOutputs, trpc } from '@/lib/trpc';
 
@@ -27,6 +28,33 @@ type VRow = { key: string | number; index: number; start: number };
 export type MediaKind = 'image' | 'audio' | 'video';
 type AssetKind = 'character' | 'scene' | 'prop';
 
+// Filter fields per asset kind. Mirrors legacy
+// frontend/src/components/BenchmarkItemDrawer.tsx FILTER_FIELDS_BY_KIND so
+// pickers in this app expose the same tag dimensions when creating a question.
+// `prop` is intentionally absent — legacy doesn't filter prop in the picker.
+type FilterField = {
+  key: 'era' | 'genre' | 'type' | 'gender' | 'age' | 'scene_type' | 'mood';
+  label: string;
+};
+
+const FILTER_FIELDS_BY_KIND: Record<'character' | 'scene', FilterField[]> = {
+  character: [
+    { key: 'era', label: '时代' },
+    { key: 'type', label: '类型' },
+    { key: 'gender', label: '性别' },
+    { key: 'age', label: '年龄段' },
+    { key: 'genre', label: '常见题材' },
+  ],
+  scene: [
+    { key: 'era', label: '时代' },
+    { key: 'scene_type', label: '场景类型' },
+    { key: 'genre', label: '常见题材' },
+    { key: 'mood', label: '氛围时段' },
+  ],
+};
+
+type FilterState = Partial<Record<FilterField['key'], string>>;
+
 export type MediaPickerProps = {
   label: string;
   mediaType: MediaKind;
@@ -47,6 +75,7 @@ export function MediaPicker({
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [debouncedSearch] = useDebounce(search, 300);
+  const [filterValues, setFilterValues] = useState<FilterState>({});
   const uploadInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const utils = trpc.useUtils();
@@ -54,11 +83,38 @@ export function MediaPicker({
   const getUploadUrl = trpc.mediaAssets.getUploadUrl.useMutation();
   const createMedia = trpc.mediaAssets.create.useMutation();
 
+  const filterFields: FilterField[] =
+    assetKind === 'character' || assetKind === 'scene' ? FILTER_FIELDS_BY_KIND[assetKind] : [];
+
+  // Distinct filter values per kind. `assets.options` only knows about asset
+  // taxonomies; only call it when we actually render filters.
+  const optionsQuery = trpc.assets.options.useQuery(
+    { kind: (assetKind ?? 'character') as AssetKind, deletedOnly: false },
+    { enabled: open && filterFields.length > 0, staleTime: 10 * 60_000 },
+  );
+  const filterOptions = (optionsQuery.data ?? {}) as Partial<
+    Record<FilterField['key'], readonly string[]>
+  >;
+
+  // Wrap each single-value selection into a `[v]` array for the backend, which
+  // expects arrays (matching `assets.list`'s filter shape).
+  const serverFilters = useMemo(() => {
+    const out: Partial<Record<FilterField['key'], string[]>> = {};
+    for (const f of filterFields) {
+      const v = filterValues[f.key];
+      if (v) out[f.key] = [v];
+    }
+    return out;
+  }, [filterFields, filterValues]);
+
+  const hasActiveFilter = Object.keys(serverFilters).length > 0;
+
   const list = trpc.mediaAssets.list.useInfiniteQuery(
     {
       mediaType,
       ...(assetKind ? { kind: assetKind } : {}),
       search: debouncedSearch || undefined,
+      ...(hasActiveFilter ? { filters: serverFilters } : {}),
       dedup: false,
     },
     {
@@ -89,17 +145,32 @@ export function MediaPicker({
   // fetched would wrongly drop selections living on an unfetched page.
   // onChange is intentionally omitted from deps: parents inline a fresh closure
   // each render, so depending on it would re-fire the effect and loop.
-  // An active search narrows `items` to matching rows only, so a selected id that
-  // doesn't match the term would look "missing" and be wrongly pruned. Only
-  // reconcile against the UNFILTERED list (no search term).
+  // An active search OR active tag filter narrows `items` to matching rows
+  // only, so a selected id that doesn't match would look "missing" and be
+  // wrongly pruned. Only reconcile against the UNFILTERED list.
   // biome-ignore lint/correctness/useExhaustiveDependencies: see note above
   useEffect(() => {
-    if (!open || debouncedSearch || list.isPending || list.hasNextPage || items.length === 0)
+    if (
+      !open ||
+      debouncedSearch ||
+      hasActiveFilter ||
+      list.isPending ||
+      list.hasNextPage ||
+      items.length === 0
+    )
       return;
     const known = new Set(items.map((i: MediaItem) => i.id));
     const surviving = selectedIds.filter((id) => known.has(id));
     if (surviving.length !== selectedIds.length) onChange(surviving);
-  }, [open, debouncedSearch, list.isPending, list.hasNextPage, items, selectedIds]);
+  }, [
+    open,
+    debouncedSearch,
+    hasActiveFilter,
+    list.isPending,
+    list.hasNextPage,
+    items,
+    selectedIds,
+  ]);
 
   function toggle(id: number) {
     if (multi) {
@@ -252,6 +323,41 @@ export function MediaPicker({
           title={label}
           widthClassName="w-[640px] max-w-full"
         >
+          {filterFields.length > 0 ? (
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              {filterFields.map((field) => (
+                <Select
+                  key={field.key}
+                  aria-label={field.label}
+                  className="h-8 w-[120px] text-xs"
+                  value={filterValues[field.key] ?? ''}
+                  onChange={(e) =>
+                    setFilterValues((prev) => ({
+                      ...prev,
+                      [field.key]: e.target.value || undefined,
+                    }))
+                  }
+                >
+                  <option value="">{field.label}</option>
+                  {(filterOptions[field.key] ?? []).map((opt) => (
+                    <option key={opt} value={opt}>
+                      {opt}
+                    </option>
+                  ))}
+                </Select>
+              ))}
+              {hasActiveFilter ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setFilterValues({})}
+                >
+                  重置筛选
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
           <Input
             aria-label="搜索素材"
             placeholder="搜索标题 / 文件名 / 来源…"

@@ -17,7 +17,7 @@ import { protectedProcedure } from '../trpc/procedures.js';
 
 export const aiRouter = t.router({
   generatePrompt: protectedProcedure.input(GeneratePromptInput).mutation(async ({ input }) => {
-    const prompt = await ai.generatePrompt(input.kind, input.data);
+    const prompt = await ai.generatePrompt(input.kind, input.data, input.description);
     return { prompt };
   }),
 

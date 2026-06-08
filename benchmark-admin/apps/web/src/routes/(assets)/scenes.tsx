@@ -25,6 +25,7 @@ function ScenesPage() {
                   ? { id: img.id, url: img.url, source: img.source }
                   : { id: img.id, url: img.url },
               )}
+              hasCover={asset.coverImageId != null}
               onAfter={() => utils.assets.list.invalidate({ kind: 'scene' })}
             />
           ) : null

@@ -1,6 +1,8 @@
+import { useRef } from 'react';
 import { LazyImage } from '@/components/asset-library/LazyImage';
 import { confirm } from '@/components/feedback/confirm';
 import { Button } from '@/components/ui/button';
+import { useLightbox } from '@/lib/lightbox-context';
 
 export type ImageGridImage = { id: number; url: string; source?: string };
 
@@ -30,8 +32,33 @@ export function ImageGrid({
   setCoverBusyId,
   deleteBusyId,
 }: ImageGridProps) {
+  const lightbox = useLightbox();
+  const gridRef = useRef<HTMLUListElement>(null);
+
   if (images.length === 0) {
     return <p className="text-xs text-[hsl(var(--muted-foreground))]">还没有任何图像。</p>;
+  }
+
+  // Build the lightbox image set once per render so prev/next walks the whole
+  // gallery, then jump to the clicked tile via initialIndex. Mirrors the
+  // pattern used by AssetCard so set-cover wiring stays consistent.
+  const lightboxImages = images.map((img) => ({
+    id: img.id,
+    url: img.url,
+    isCover: img.id === coverImageId,
+  }));
+
+  function openLightbox(index: number) {
+    lightbox.open({
+      images: lightboxImages,
+      initialIndex: index,
+      onSetCover: (id) => {
+        // Lightbox returns LightboxImageId (string|number); list ids are
+        // always numeric so a non-number is a contract bug — drop it.
+        if (typeof id === 'number') onSetCover(id);
+      },
+      triggerRef: gridRef,
+    });
   }
 
   async function handleDelete(imageId: number) {
@@ -45,8 +72,8 @@ export function ImageGrid({
   }
 
   return (
-    <ul className="grid list-none grid-cols-2 gap-2 p-0" aria-label="图像列表">
-      {images.map((img) => {
+    <ul ref={gridRef} className="grid list-none grid-cols-2 gap-2 p-0" aria-label="图像列表">
+      {images.map((img, idx) => {
         const isCover = img.id === coverImageId;
         const tag = sourceTagLabel(img.source);
         return (
@@ -55,18 +82,25 @@ export function ImageGrid({
             className={`overflow-hidden rounded border ${isCover ? 'border-[hsl(var(--primary))]' : 'border-[hsl(var(--border))]'}`}
           >
             <div className="relative">
-              <LazyImage
-                src={img.url}
-                alt={img.source ?? `image-${img.id}`}
-                className="aspect-square w-full"
-              />
+              <button
+                type="button"
+                onClick={() => openLightbox(idx)}
+                aria-label={`放大查看图像 ${img.id}`}
+                className="block w-full cursor-zoom-in p-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]"
+              >
+                <LazyImage
+                  src={img.url}
+                  alt={img.source ?? `image-${img.id}`}
+                  className="aspect-square w-full"
+                />
+              </button>
               {tag ? (
-                <span className="absolute left-1 top-1 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white">
+                <span className="pointer-events-none absolute left-1 top-1 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white">
                   {tag}
                 </span>
               ) : null}
               {isCover ? (
-                <span className="absolute right-1 top-1 rounded bg-[hsl(var(--primary))] px-1.5 py-0.5 text-[10px] font-medium text-[hsl(var(--primary-foreground))]">
+                <span className="pointer-events-none absolute right-1 top-1 rounded bg-[hsl(var(--primary))] px-1.5 py-0.5 text-[10px] font-medium text-[hsl(var(--primary-foreground))]">
                   当前封面
                 </span>
               ) : null}

@@ -129,6 +129,28 @@ describe('generatePrompt — scene and prop', () => {
     const call = mockCreate.mock.calls[0]?.[0] as { messages: Array<{ role: string; content: string }> };
     expect(call.messages[0]?.content).toContain('道具');
   });
+
+  it('feeds the free-text description to the model instead of structured fields (BEN-31)', async () => {
+    // Regression: when the user fills 自由描述 the builders must use that text
+    // verbatim. Previously the description never reached the model and the
+    // structured-fallback path produced unrelated output (medieval tavern for
+    // a kitchen).
+    mockCreate.mockResolvedValue({
+      choices: [{ message: { content: 'A modern apartment kitchen...' } }],
+    });
+    const { generatePrompt } = await import('../index.js');
+    await generatePrompt(
+      'scene',
+      { scene_type: '室内' },
+      '现代公寓的厨房，包括冰箱灶台等。',
+    );
+    const call = mockCreate.mock.calls[0]?.[0] as { messages: Array<{ role: string; content: string }> };
+    const userMsg = call.messages[1]?.content ?? '';
+    expect(userMsg).toContain('场景自由描述');
+    expect(userMsg).toContain('现代公寓的厨房');
+    // The structured "场景信息" prefix must NOT appear when description is used.
+    expect(userMsg).not.toContain('场景信息：');
+  });
 });
 
 describe('extractFields', () => {
