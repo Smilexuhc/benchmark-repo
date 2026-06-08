@@ -257,6 +257,14 @@ export function Cascader({
                     aria-selected={isSelected}
                     onMouseEnter={() => setActive([...active.slice(0, depth), opt.value])}
                     onFocus={() => setActive([...active.slice(0, depth), opt.value])}
+                    // Pre-commit on pointer-down: some Windows Edge builds drop
+                    // the subsequent click event when the cascader popup lives
+                    // inside an aria-modal Drawer, leaving the panel open. Firing
+                    // here guarantees onChange runs before the click is lost.
+                    onPointerDown={(e) => {
+                      if (e.button !== 0) return;
+                      onRowClick(depth, opt);
+                    }}
                     onClick={() => onRowClick(depth, opt)}
                     onKeyDown={(e) => onRowKeyDown(e, depth, idx, opt)}
                     className={cn(

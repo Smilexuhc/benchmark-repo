@@ -14,6 +14,7 @@ import {
 } from '@benchmark-admin/shared/constants/question-types';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { type SubmitHandler, useForm } from 'react-hook-form';
 import { z } from 'zod';
 
@@ -203,7 +204,10 @@ export function BenchmarkDrawer({ id, onClose, onSaved }: BenchmarkDrawerProps) 
     form.setValue('categoryL2', l2, { shouldDirty: true });
     form.setValue('categoryL3', l3, { shouldDirty: true });
     form.setValue('categoryDefinition', definitionFor(l1, l2, l3), { shouldDirty: true });
-    setCascaderOpen(false);
+    // flushSync so the popup unmounts in the same paint as the form update —
+    // some Edge builds inside the aria-modal Drawer kept the panel visible
+    // until the next outside click otherwise.
+    flushSync(() => setCascaderOpen(false));
   }
 
   // Non-blocking completeness feedback: the product wants curated items, but an
