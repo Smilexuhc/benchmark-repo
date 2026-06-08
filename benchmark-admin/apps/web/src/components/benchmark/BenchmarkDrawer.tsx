@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { type RouterOutputs, trpc } from '@/lib/trpc';
+import { Popover } from '@base-ui/react/popover';
 import { CATEGORY_TREE, definitionFor } from '@benchmark-admin/shared/benchmark/categoryTree';
 import {
   QUESTION_TYPES,
@@ -25,6 +26,28 @@ const SCENE_OPTIONS = ['电影 / 预告片', '短剧 / 剧情片段', '动画 / 
 const SCREEN_SIZE_OPTIONS = ['16:9', '9:16', '2.39:1'] as const;
 const SCORE_OPTIONS = [null, 0, 1, 2, 3, 4, 5] as const;
 const DIFFICULTY_OPTIONS = ['', '易', '中', '难'] as const;
+
+// Legacy parity: BenchmarkItemDrawer.tsx:129-145 — three rich blocks that
+// describe what 易/中/难 mean, opened by clicking the info icon next to the
+// difficulty Select. Replaces the prior plain `title` HTML tooltip, which lost
+// the styled definition panel from legacy.
+const DIFFICULTY_DEFINITIONS: { value: '易' | '中' | '难'; title: string; body: string }[] = [
+  {
+    value: '易',
+    title: '简单',
+    body: '单一清晰主体，常规或静态表现，没有额外扰动。模型在理想条件下本应稳定完成，是用来确认「基本功在不在」的基准线。',
+  },
+  {
+    value: '中',
+    title: '中等',
+    body: '在简单的基础上，只引入一项复杂度：要么主体变多，要么表现变剧烈，要么叠加一层扰动，但其余两项保持简单，焦点依然单一。模型需要多处理一件事。',
+  },
+  {
+    value: '难',
+    title: '困难',
+    body: '多项复杂度交叉，逼近或越过模型能力边界；或者本身就是行业已知容易崩的场景。典型失效模式包括高相似度多主体、换脸/人皮面具、受伤或剧烈状态变化、幻想生物、多主体复杂交互、叠加场景切换。',
+  },
+];
 
 // Legacy parity highlight: ≥4 green, ≥2 blue, <2 orange, null gray.
 // Returned as a tailwind class string applied to the active score button.
@@ -292,12 +315,6 @@ export function BenchmarkDrawer({ id, onClose, onSaved }: BenchmarkDrawerProps) 
                 })
               }
               aria-label="难度"
-              title={
-                '难度定义：\n' +
-                '易 · 简单：单一清晰主体，常规或静态表现，没有额外扰动。\n' +
-                '中 · 中等：单点复杂度，主体变多 / 表现变剧烈 / 单层扰动，焦点仍单一。\n' +
-                '难 · 困难：多项复杂度交叉，逼近或越过模型能力边界。'
-              }
               className="w-[82px] shrink-0"
             >
               {DIFFICULTY_OPTIONS.map((v) => (
@@ -306,6 +323,7 @@ export function BenchmarkDrawer({ id, onClose, onSaved }: BenchmarkDrawerProps) 
                 </option>
               ))}
             </Select>
+            <DifficultyInfoPopover activeValue={form.watch('difficulty')} />
             <Input
               {...form.register('manualTag')}
               placeholder="对该题目的人工补充描述，例如：动作断层跳变（动作中途突然跳转，无过渡衔接，前后姿态割裂）"
@@ -489,5 +507,74 @@ export function BenchmarkDrawer({ id, onClose, onSaved }: BenchmarkDrawerProps) 
         </footer>
       </form>
     </Drawer>
+  );
+}
+
+// Renders an info icon next to the difficulty Select. Click opens a Popover with
+// three rich blocks describing 易/中/难; the currently selected level gets a
+// blue left border and title color (legacy BenchmarkItemDrawer.tsx:603-621).
+function DifficultyInfoPopover({ activeValue }: { activeValue: '' | '易' | '中' | '难' }) {
+  return (
+    <Popover.Root>
+      <Popover.Trigger
+        render={(props) => (
+          <button
+            type="button"
+            aria-label="查看难度定义"
+            title="查看难度定义"
+            className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]"
+            {...props}
+          >
+            <InfoCircleIcon />
+          </button>
+        )}
+      />
+      <Popover.Portal>
+        <Popover.Positioner sideOffset={6}>
+          <Popover.Popup className="z-50 w-[420px] max-w-[calc(100vw-2rem)] rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--background))] p-3 shadow-lg outline-none">
+            <div className="grid gap-2.5">
+              {DIFFICULTY_DEFINITIONS.map((item) => {
+                const active = activeValue === item.value;
+                return (
+                  <div
+                    key={item.value}
+                    className="border-l-[3px] pl-2.5"
+                    style={{ borderLeftColor: active ? 'hsl(var(--primary))' : 'hsl(var(--border))' }}
+                  >
+                    <div
+                      className="text-sm font-semibold"
+                      style={{ color: active ? 'hsl(var(--primary))' : 'hsl(var(--foreground))' }}
+                    >
+                      {item.value} · {item.title}
+                    </div>
+                    <div className="mt-1 text-[13px] leading-5 text-[hsl(var(--muted-foreground))]">
+                      {item.body}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </Popover.Popup>
+        </Popover.Positioner>
+      </Popover.Portal>
+    </Popover.Root>
+  );
+}
+
+function InfoCircleIcon() {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      width="14"
+      height="14"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      aria-hidden="true"
+    >
+      <circle cx="8" cy="8" r="6.25" />
+      <path d="M8 7.25v3.75" strokeLinecap="round" />
+      <circle cx="8" cy="5" r="0.75" fill="currentColor" stroke="none" />
+    </svg>
   );
 }

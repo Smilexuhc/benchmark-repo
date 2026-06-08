@@ -408,11 +408,22 @@ export function SceneDrawer({
                 await ctx.deleteImage.mutateAsync({ imageId });
                 await ctx.refresh();
               }}
+              setCoverBusyId={
+                ctx.setCover.isPending ? (ctx.setCover.variables?.imageId ?? null) : null
+              }
+              deleteBusyId={
+                ctx.deleteImage.isPending ? (ctx.deleteImage.variables?.imageId ?? null) : null
+              }
             />
           )}
         </section>
         {!ctx.isNew ? (
-          <SceneViewColumn sceneId={id} images={images} onAfter={() => ctx.refresh()} />
+          <SceneViewColumn
+            sceneId={id}
+            images={images}
+            hasCover={ctx.asset?.coverImageId != null}
+            onAfter={() => ctx.refresh()}
+          />
         ) : null}
 
         <DrawerFooter
