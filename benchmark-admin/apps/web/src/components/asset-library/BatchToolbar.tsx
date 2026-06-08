@@ -148,11 +148,10 @@ export function BatchToolbar({
   const running = state === 'running' || state === 'stopping';
 
   return (
-    <div
+    <section
       className={cn(
         'flex w-full items-center gap-3 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm',
       )}
-      role="region"
       aria-label="批量生成"
     >
       {running ? (
@@ -164,6 +163,7 @@ export function BatchToolbar({
           <div
             className="relative h-2 flex-1 overflow-hidden rounded-full bg-blue-100"
             role="progressbar"
+            tabIndex={0}
             aria-valuemin={0}
             aria-valuemax={progress.total}
             aria-valuenow={progress.done}
@@ -222,6 +222,6 @@ export function BatchToolbar({
           </Button>
         </>
       )}
-    </div>
+    </section>
   );
 }
