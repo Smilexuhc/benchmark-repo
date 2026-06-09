@@ -177,7 +177,8 @@ describe('BenchmarkComments — delete via confirm', () => {
     await user.click(await screen.findByRole('button', { name: '删除评论 7' }));
 
     await waitFor(() => expect(confirmMock).toHaveBeenCalledTimes(1));
-    const args = confirmMock.mock.calls[0]?.[0] as unknown as { title: string; danger?: boolean };
+    const firstCall = confirmMock.mock.calls[0] as unknown[] | undefined;
+    const args = firstCall?.[0] as { title: string; danger?: boolean };
     expect(args.title).toBe('删除这条评论？');
     expect(args.danger).toBe(true);
 

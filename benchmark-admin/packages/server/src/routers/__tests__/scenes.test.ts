@@ -87,7 +87,7 @@ describe('scenesRouter', () => {
     expect(mockGenerateImage).toHaveBeenCalledOnce();
     // AI should have been called with the cover bytes (wrapped in an array
     // after the multi-ref signature change — see services/ai/index.ts)
-    const [, refBytes] = mockGenerateImage.mock.calls[0] as [string, Buffer[]];
+    const [, refBytes] = mockGenerateImage.mock.calls[0] as unknown as [string, Buffer[]];
     expect(refBytes).toBeDefined();
     expect(refBytes).toHaveLength(1);
   });

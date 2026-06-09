@@ -40,7 +40,7 @@ describe('categoryTree', () => {
   });
 
   it('leaf count matches the current taxonomy (guards against a partial port)', () => {
-    expect(leaves(CATEGORY_TREE).length).toBe(85);
+    expect(leaves(CATEGORY_TREE).length).toBe(82);
   });
 
   it('definitionFor returns the exact leaf definition for a known path', () => {
@@ -69,6 +69,21 @@ describe('categoryTree', () => {
     expect(leafByPath('单镜头', '表演与动作', '简单动作执行')).toBeUndefined();
     expect(leafByPath('单镜头', '表演与动作', '复杂动作执行')).toBeUndefined();
     expect(leafByPath('单镜头', '表演与动作', '物理反馈、受力')).toBeUndefined();
+  });
+
+  it('keeps only the merged 1.5 scheduling leaves with contiguous codes', () => {
+    const scheduling = CATEGORY_TREE.find((n) => n.value === '单镜头')?.children?.find(
+      (n) => n.value === '调度与场面组织',
+    );
+    expect(scheduling?.children?.map((n) => [n.code, n.value])).toEqual([
+      ['1.5.1', '人物站位合理性'],
+      ['1.5.2', '人物距离与互动空间'],
+      ['1.5.3', '出入画与运动动线'],
+    ]);
+
+    expect(leafByPath('单镜头', '调度与场面组织', '视线组织')).toBeUndefined();
+    expect(leafByPath('单镜头', '调度与场面组织', '主次关系与画面重心')).toBeUndefined();
+    expect(leafByPath('单镜头', '调度与场面组织', '多人物场面组织')).toBeUndefined();
   });
 
   it('labelsForPath returns code-prefixed labels for a full path', () => {

@@ -34,7 +34,7 @@ const SEARCH_PLACEHOLDER: Record<AssetKind, string> = {
   prop: '搜索名称 / 提示词 / 描述',
 };
 
-type VRow = { key: string | number; index: number; start: number };
+type VRow = { key: React.Key; index: number; start: number };
 
 export type { AssetKind };
 
@@ -158,7 +158,7 @@ export function AssetLibrary({ kind, renderDrawer, renderInfo, renderExtra }: As
     setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   }
 
-  const items = (list.data?.pages.flatMap((p: { items: AssetCardData[] }) => p.items) ??
+  const items = (list.data?.pages.flatMap((p: { items: unknown[] }) => p.items) ??
     []) as AssetCardData[];
 
   // Total count of rows matching the filter, server-side. While the first
@@ -344,7 +344,7 @@ function VirtualizedCardList({
           if (!asset) return null;
           return (
             <div
-              key={virtualRow.key}
+              key={String(virtualRow.key)}
               // biome-ignore lint/a11y/useSemanticElements: virtualizer-positioned div inside a role="list"
               role="listitem"
               className="absolute left-0 right-0"
