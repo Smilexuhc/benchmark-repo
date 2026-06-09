@@ -150,7 +150,7 @@ describe('PlaygroundPage', () => {
     const call = captured.generate[0];
     expect(call?.prompt).toBe('a winter forest');
     expect(call?.aspectRatio).toBe('16:9');
-    expect(call?.model).toBe('gpt-image-2');
+    expect(call?.model).toBe('openai/gpt-5.4-image-2');
     expect(call?.refImages).toBeUndefined();
   });
 

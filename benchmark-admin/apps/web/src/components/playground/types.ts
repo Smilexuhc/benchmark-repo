@@ -16,7 +16,7 @@ export const ASPECT_LABELS: Record<AspectRatio, string> = {
 
 // v1 ships a single image model; the dropdown is shown for fidelity with the
 // screenshot but locked to one value (matches the zod whitelist on the server).
-export const MODELS = ['gpt-image-2'] as const;
+export const MODELS = ['openai/gpt-5.4-image-2'] as const;
 export type ImageModel = (typeof MODELS)[number];
 
 export const MAX_REF_IMAGES = 4;

@@ -29,7 +29,7 @@ type FormValues = z.infer<typeof FormSchema>;
 const EMPTY: FormValues = {
   prompt: '',
   aspectRatio: '16:9',
-  model: 'gpt-image-2',
+  model: 'openai/gpt-5.4-image-2',
 };
 
 // Standalone image-gen workbench.

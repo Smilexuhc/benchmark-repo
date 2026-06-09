@@ -169,7 +169,7 @@ describe('aiRouter', () => {
       expect(lastCallArgs?.[0]).toBe('a winter forest');
       expect(lastCallArgs?.[1]).toBeUndefined();
       expect(lastCallArgs?.[2]).toBe('16:9');
-      expect(lastCallArgs?.[3]).toBe('gpt-image-2');
+      expect(lastCallArgs?.[3]).toBe('openai/gpt-5.4-image-2');
     });
 
     it('passes ref bytes in caller order', async () => {
@@ -189,13 +189,13 @@ describe('aiRouter', () => {
       expect(refs).toHaveLength(2);
     });
 
-    it('defaults aspectRatio to 16:9 and model to gpt-image-2 when omitted', async () => {
+    it('defaults aspectRatio to 16:9 and the legacy image model when omitted', async () => {
       const { generateImage } = await import('../../services/ai/index.js');
       await caller.ai.generateStandalone({ prompt: 'defaults' });
 
       const lastCallArgs = vi.mocked(generateImage).mock.calls.at(-1);
       expect(lastCallArgs?.[2]).toBe('16:9');
-      expect(lastCallArgs?.[3]).toBe('gpt-image-2');
+      expect(lastCallArgs?.[3]).toBe('openai/gpt-5.4-image-2');
     });
 
     it('rejects a non-existent ref id with BAD_REQUEST', async () => {
@@ -223,7 +223,7 @@ describe('aiRouter', () => {
       await expect(
         caller.ai.generateStandalone({
           prompt: 'x',
-          model: 'banana' as unknown as 'gpt-image-2',
+          model: 'banana' as unknown as 'openai/gpt-5.4-image-2',
         }),
       ).rejects.toThrow();
     });

@@ -47,7 +47,7 @@ export const GenerateImageInput = z.object({
 export const GenerateStandaloneImageInput = z.object({
   prompt: z.string().min(1),
   aspectRatio: z.enum(['16:9', '1:1', '3:2', '2:3', '9:16']).default('16:9'),
-  model: z.enum(['gpt-image-2']).default('gpt-image-2'),
+  model: z.enum(['openai/gpt-5.4-image-2']).default('openai/gpt-5.4-image-2'),
   refImages: z.array(z.number().int().positive()).max(4).optional(),
 });
 

@@ -78,7 +78,7 @@ export const aiRouter = t.router({
 
   // Standalone playground generation. Not bound to any asset — both the
   // reference images and the result land as assetId=NULL media rows. The
-  // contract-edge whitelist (gpt-image-2 only, 5 fixed aspect ratios, ≤4 refs)
+  // contract-edge whitelist (one image model, 5 fixed aspect ratios, ≤4 refs)
   // lives in GenerateStandaloneImageInput; this handler is a thin composition
   // over the existing storage + ai.generateImage pipeline.
   generateStandalone: protectedProcedure
