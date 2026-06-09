@@ -11,6 +11,7 @@ import { useLightbox } from '@/lib/lightbox-context';
 import { type RouterOutputs, trpc } from '@/lib/trpc';
 
 type MediaItem = RouterOutputs['mediaAssets']['list']['items'][number];
+type VirtualRow = { key: React.Key; index: number; start: number };
 
 // Legacy parity (frontend/src/components/BenchmarkItemDrawer.tsx:318-456):
 // 920px modal, single-column table with [checkbox][preview thumb][title + meta].
@@ -25,8 +26,6 @@ const MEDIA_TYPE_ACCEPT: Record<string, string> = {
   audio: 'audio/*',
   video: 'video/*',
 };
-
-type VRow = { key: string | number; index: number; start: number };
 
 export type MediaKind = 'image' | 'audio' | 'video';
 type AssetKind = 'character' | 'scene' | 'prop';
@@ -468,7 +467,7 @@ function VirtualizedMediaTable({
           className="relative w-full"
           style={{ height: `${rowVirtualizer.getTotalSize()}px` }}
         >
-          {rowVirtualizer.getVirtualItems().map((virtualRow: VRow) => {
+          {rowVirtualizer.getVirtualItems().map((virtualRow: VirtualRow) => {
             const item = items[virtualRow.index];
             if (!item) return null;
             const active = selectedIds.includes(item.id);

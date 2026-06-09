@@ -26,7 +26,7 @@ function isUnauthorized(err: unknown): boolean {
 export function createAppQueryClient(): QueryClient {
   const client: QueryClient = new QueryClient({
     queryCache: new QueryCache({
-      onError(err: unknown, query: Query) {
+      onError(err: Error, query: Query<unknown, unknown, unknown, readonly unknown[]>) {
         // The session probe itself returning 401 is the *normal* unauthenticated
         // state and is already handled by the auth guard; only redirect for
         // other queries that 401 (e.g. cookie expired mid-session).

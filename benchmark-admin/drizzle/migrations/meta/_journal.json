@@ -57,6 +57,13 @@
       "when": 1780203406646,
       "tag": "0007_add_expected_video_time",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1780203406647,
+      "tag": "0008_merge_video_benchmark_scheduling_categories",
+      "breakpoints": true
     }
   ]
 }

@@ -6,6 +6,7 @@ import { Drawer, DrawerFooter } from '@/components/ui/drawer';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { trpc } from '@/lib/trpc';
+import type { PropData } from '@benchmark-admin/shared/schemas/assets';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect, useRef } from 'react';
 import { type SubmitHandler, useForm } from 'react-hook-form';
@@ -59,14 +60,15 @@ export function PropDrawer({
   useEffect(() => {
     if (ctx.asset && ctx.asset.kind === 'prop') {
       const a = ctx.asset;
+      const data = a.data as PropData;
       form.reset(
         {
           name: a.name,
           era: a.era ?? '',
           genre: a.genre ?? '',
-          category: a.data.category ?? '',
-          prompt: a.data.prompt ?? '',
-          description: a.data.description ?? '',
+          category: data.category ?? '',
+          prompt: data.prompt ?? '',
+          description: data.description ?? '',
         },
         { keepDirtyValues: true },
       );

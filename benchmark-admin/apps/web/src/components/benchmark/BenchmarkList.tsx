@@ -19,8 +19,7 @@ const SCENE_OPTIONS = ['电影 / 预告片', '短剧 / 剧情片段', '动画 / 
 const SCREEN_SIZE_OPTIONS = ['16:9', '9:16', '2.39:1'];
 
 type BenchmarkItem = RouterOutputs['benchmark']['list']['items'][number];
-type VirtualRow = { key: string | number; index: number; start: number };
-
+type VirtualRow = { key: React.Key; index: number; start: number };
 // Card height varies with prompt / asset count, so the virtualizer is keyed off
 // `measureElement` instead of a fixed row height. The estimate just primes the
 // scroll buffer for the first paint — once a card mounts, its real height

@@ -61,7 +61,10 @@ function RootContent() {
           <Button variant="outline" size="sm" onClick={() => session.refetch()}>
             重试
           </Button>
-          <Button size="sm" onClick={() => navigate({ to: '/login', replace: true })}>
+          <Button
+            size="sm"
+            onClick={() => navigate({ to: '/login', search: { redirect: pathname }, replace: true })}
+          >
             重新登录
           </Button>
         </div>

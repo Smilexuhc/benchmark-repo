@@ -6,6 +6,7 @@ import { Drawer, DrawerFooter } from '@/components/ui/drawer';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { trpc } from '@/lib/trpc';
+import type { SceneData } from '@benchmark-admin/shared/schemas/assets';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect, useRef } from 'react';
 import { type SubmitHandler, useForm } from 'react-hook-form';
@@ -64,10 +65,11 @@ export function SceneDrawer({
   useEffect(() => {
     if (ctx.asset && ctx.asset.kind === 'scene') {
       const a = ctx.asset;
+      const data = a.data as SceneData;
       // `data.elements` arrives as `string` on rows migrated from legacy and
       // as `string[]` on rows created via this admin schema; tolerate both.
       // Calling `.join` on a string here was the round-9 crash on 编辑.
-      const rawElements = a.data.elements as unknown;
+      const rawElements = data.elements as unknown;
       const elements = Array.isArray(rawElements)
         ? rawElements.join(', ')
         : typeof rawElements === 'string'
@@ -78,11 +80,11 @@ export function SceneDrawer({
           name: a.name,
           era: a.era ?? '',
           genre: a.genre ?? '',
-          scene_type: a.data.scene_type ?? '',
-          mood: a.data.mood ?? '',
+          scene_type: data.scene_type ?? '',
+          mood: data.mood ?? '',
           elements,
-          prompt: a.data.prompt ?? '',
-          description: a.data.description ?? '',
+          prompt: data.prompt ?? '',
+          description: data.description ?? '',
         },
         { keepDirtyValues: true },
       );

@@ -6,6 +6,7 @@ import { Drawer, DrawerFooter } from '@/components/ui/drawer';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { trpc } from '@/lib/trpc';
+import type { CharacterData } from '@benchmark-admin/shared/schemas/assets';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect, useRef } from 'react';
 import { type SubmitHandler, useForm } from 'react-hook-form';
@@ -69,6 +70,7 @@ export function CharacterDrawer({
   useEffect(() => {
     if (ctx.asset && ctx.asset.kind === 'character') {
       const a = ctx.asset;
+      const data = a.data as CharacterData;
       // keepDirtyValues preserves any fields the user (or AI extract) has
       // already touched, so a post-AI ctx.refresh() can't clobber the unsaved
       // patch with stale server data.
@@ -77,14 +79,14 @@ export function CharacterDrawer({
           name: a.name,
           era: a.era ?? '',
           genre: a.genre ?? '',
-          type: a.data.type ?? '',
-          gender: a.data.gender ?? '',
-          age: a.data.age ?? '',
-          persona: a.data.persona ?? '',
-          body: a.data.body ?? '',
-          features: a.data.features ?? '',
-          prompt: a.data.prompt ?? '',
-          description: a.data.description ?? '',
+          type: data.type ?? '',
+          gender: data.gender ?? '',
+          age: data.age ?? '',
+          persona: data.persona ?? '',
+          body: data.body ?? '',
+          features: data.features ?? '',
+          prompt: data.prompt ?? '',
+          description: data.description ?? '',
         },
         { keepDirtyValues: true },
       );
@@ -248,7 +250,9 @@ export function CharacterDrawer({
   // Legacy uses the asset's persona as the drawer title for edits (e.g. "草原雄狮"),
   // not a generic 编辑角色. Falls back to "编辑角色" if persona is empty.
   const editTitle =
-    (ctx.asset && 'data' in ctx.asset && (ctx.asset.data?.persona as string | undefined))?.trim() ||
+    (ctx.asset && 'data' in ctx.asset
+      ? ((ctx.asset.data as CharacterData).persona ?? '').trim()
+      : '') ||
     ctx.asset?.name?.trim() ||
     '编辑角色';
 
@@ -472,17 +476,17 @@ export function CharacterDrawer({
 }
 
 function mapCharacter(
-  data: Partial<CharacterFormValues>,
+  data: Partial<Record<keyof CharacterFormValues, string | undefined>>,
   current: CharacterFormValues,
 ): Partial<CharacterFormValues> {
   return {
-    type: data.type ?? current.type,
-    gender: data.gender ?? current.gender,
-    age: data.age ?? current.age,
-    persona: data.persona ?? current.persona,
-    body: data.body ?? current.body,
-    features: data.features ?? current.features,
-    prompt: data.prompt ?? current.prompt,
-    description: data.description ?? current.description,
+    type: data.type ?? current.type ?? '',
+    gender: data.gender ?? current.gender ?? '',
+    age: data.age ?? current.age ?? '',
+    persona: data.persona ?? current.persona ?? '',
+    body: data.body ?? current.body ?? '',
+    features: data.features ?? current.features ?? '',
+    prompt: data.prompt ?? current.prompt ?? '',
+    description: data.description ?? current.description ?? '',
   };
 }
